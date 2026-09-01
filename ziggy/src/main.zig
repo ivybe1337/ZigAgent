@@ -98,6 +98,14 @@ pub fn main(p_init: std.process.Init) !void {
         return;
     }
 
+    if (std.mem.eql(u8, command, "serve") or std.mem.eql(u8, command, "remote")) {
+        const port_arg = iter.next();
+        const port: u16 = if (port_arg) |p| std.fmt.parseInt(u16, p, 10) catch 4040 else 4040;
+        var srv = @import("server.zig").RemoteServer.init(alloc, port);
+        try srv.run();
+        return;
+    }
+
     try printHelp();
 }
 

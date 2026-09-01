@@ -2,61 +2,124 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Ziggy</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>⚡ ZigAgent Mobile Companion</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0d1117" />
+  <link rel="apple-touch-icon" href="/icon.png" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="kicker">ZIGGY / ZIG</div>
-        <h1>Ziggy</h1>
-        <p>Native agent runtime with approvals and a minimal local UI.</p>
+  <div class="app-container">
+    <!-- Top Mobile Header & Context HUD -->
+    <header class="top-nav">
+      <div class="brand-row">
+        <div class="brand-title">
+          <span class="pulse-dot"></span>
+          <strong>ZIGAGENT</strong>
+          <span class="badge">REMOTE</span>
+        </div>
+        <div class="header-actions">
+          <button id="btn-esc-halt" class="btn-danger" title="Emergency Stop (<ESC>)">🛑 HALT</button>
+        </div>
+      </div>
+      
+      <!-- Live Context & HUD Bar -->
+      <div class="context-hud">
+        <div class="hud-labels">
+          <span id="hud-workspace">~/LocalBuilds/ZigAgent</span>
+          <span id="hud-model">openai/gpt-oss-120b</span>
+        </div>
+        <div class="progress-track">
+          <div id="hud-progress-bar" class="progress-fill" style="width: 2%;"></div>
+        </div>
+        <div class="hud-stats">
+          <span id="hud-tokens">2.4k / 128k tokens (2%)</span>
+          <span class="hud-reasoning">⚡ UNBOUNDED</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="chat">💬 Chat & Actions</button>
+      <button class="tab-btn" data-tab="diff">🗂️ Git Diff</button>
+      <button class="tab-btn" data-tab="doctor">🩺 Doctor</button>
+      <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
+    </nav>
+
+    <!-- Tab 1: Chat Stream -->
+    <main id="tab-chat" class="tab-content active">
+      <div id="chat-stream" class="chat-stream">
+        <div class="msg system">
+          <div class="msg-header">⚡ ZIGAGENT ENGINE READY</div>
+          <div class="msg-body">Mobile cloud gateway connected. Real-time token streaming and non-blocking remote steering active.</div>
+        </div>
       </div>
 
-      <section class="panel">
-        <label for="goal">Goal</label>
-        <textarea id="goal">inspect this project and suggest the safest first improvement</textarea>
-        <div class="actions">
-          <button id="run">Run Agent</button>
-          <button id="refresh" class="ghost">Refresh</button>
+      <!-- Live Mobile Steering & Input Bar -->
+      <div class="input-container">
+        <div class="quick-chips">
+          <button class="chip" data-cmd="/doctor">🩺 /doctor</button>
+          <button class="chip" data-cmd="/mcp">🔌 /mcp</button>
+          <button class="chip" data-cmd="/skills">🧠 /skills</button>
+          <button class="chip" data-cmd="!git status">💻 !git status</button>
         </div>
-      </section>
-
-      <section class="panel">
-        <h2>Config</h2>
-        <pre id="config">loading...</pre>
-      </section>
-    </aside>
-
-    <main class="main">
-      <section class="metrics">
-        <div class="metric"><span>Phase</span><strong id="phase">idle</strong></div>
-        <div class="metric"><span>Step</span><strong id="step">0</strong></div>
-        <div class="metric"><span>Confidence</span><strong id="confidence">0.00</strong></div>
-        <div class="metric"><span>Running</span><strong id="running">false</strong></div>
-      </section>
-
-      <section class="card hero">
-        <h2>Summary</h2>
-        <p id="summary">No summary yet.</p>
-        <pre id="final"></pre>
-      </section>
-
-      <section class="grid">
-        <section class="card">
-          <h2>Pending approvals</h2>
-          <div id="pending"></div>
-        </section>
-
-        <section class="card">
-          <h2>Events</h2>
-          <div id="events"></div>
-        </section>
-      </section>
+        <form id="chat-form" class="input-form">
+          <button type="button" id="btn-voice" class="btn-icon" title="Voice Input">🎙️</button>
+          <input type="text" id="user-input" placeholder="Type instruction, !cmd, or /slash..." autocomplete="off" autocorrect="off" />
+          <button type="submit" id="btn-send" class="btn-primary">Send</button>
+        </form>
+      </div>
     </main>
+
+    <!-- Tab 2: Git Diff Viewer -->
+    <section id="tab-diff" class="tab-content">
+      <div class="diff-header">
+        <h3>Live Workspace Changes</h3>
+        <button id="btn-refresh-diff" class="btn-secondary">Refresh</button>
+      </div>
+      <pre id="diff-content" class="code-box">Loading git diff...</pre>
+    </section>
+
+    <!-- Tab 3: System Doctor -->
+    <section id="tab-doctor" class="tab-content">
+      <div class="doctor-card">
+        <h3>System & Memory Diagnostic</h3>
+        <ul class="doctor-list">
+          <li><span>Runtime Engine</span><strong class="text-green">Pure Native Zig 0.16.0</strong></li>
+          <li><span>Memory Architecture</span><strong>L1 Ring + L3 Merkle Forest</strong></li>
+          <li><span>Allocator</span><strong>Step Arena (Zero-GC)</strong></li>
+          <li><span>MCP Protocol</span><strong class="text-green">JSON-RPC 2.0 Active</strong></li>
+          <li><span>Remote Gateway</span><strong class="text-green">Online (Port 4040)</strong></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Tab 4: Settings -->
+    <section id="tab-settings" class="tab-content">
+      <div class="settings-card">
+        <h3>Remote Settings</h3>
+        <div class="setting-item">
+          <span>Autonomy Mode</span>
+          <select id="sel-autonomy">
+            <option value="unbounded">⚡ Unbounded Autonomy</option>
+            <option value="bounded">Bounded (15 steps)</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <span>Thinking Effort</span>
+          <select id="sel-reasoning">
+            <option value="max">Max Deep Reasoning</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+          </select>
+        </div>
+      </div>
+    </section>
   </div>
+
   <script src="/app.js"></script>
 </body>
 </html>

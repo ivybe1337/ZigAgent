@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "ZigAgent Mobile",
+    "slug": "zigagent-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "../app/AppIcon.iconset/icon_512x512.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#090d13"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ivybe1337.zigagent.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#090d13"
+      },
+      "package": "com.ivybe1337.zigagent.mobile"
+    },
+    "web": {
+      "favicon": "../app/AppIcon.iconset/icon_32x32.png"
+    }
+  }
+}

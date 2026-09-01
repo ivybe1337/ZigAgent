@@ -45,6 +45,7 @@ Whether running in headless CI, an interactive true-color terminal TUI, or the n
 │  • Interactive Terminal REPL:          ziggy                                │
 │  • Live Telemetry HUD TUI:             ziggy tui "<goal>"                   │
 │  • Native macOS Cocoa Desktop App:     ZigAgent.app                         │
+│  • Mobile Companion App (iOS/Android): mobile/ & PWA (Port 4040)            │
 │  • VS Code Native Extension:           extension/                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  [2. Cognitive Planning & Execution]                                        │
@@ -156,6 +157,20 @@ cd app
 clang -framework Cocoa -O3 src/main.m -o ZigAgent.app/Contents/MacOS/ZigAgent
 open ZigAgent.app
 ```
+
+---
+
+## 📱 Remote Cloud Gateway & Mobile Companion
+
+Launch the embedded HTTP & WebSocket gateway to access ZigAgent while away:
+```bash
+ziggy serve 4040
+# Or from inside the REPL:
+ziggy ❯ /remote
+```
+
+- **Instant Mobile Access**: Open `http://<YOUR-IP>:4040?token=<TOKEN>` on iOS Safari / Android Chrome and tap **Add to Home Screen** for a full native PWA experience.
+- **Native Mobile App**: Open `mobile/` and run `bun start` to launch the React Native / Expo companion app with emergency `<ESC>` halts, live voice dictation, and git diff review.
 
 ---
 

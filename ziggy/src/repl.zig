@@ -213,6 +213,13 @@ pub const Repl = struct {
             return true;
         }
 
+        if (std.mem.eql(u8, cmd, "/remote") or std.mem.eql(u8, cmd, "/serve")) {
+            const port: u16 = if (arg1) |p| std.fmt.parseInt(u16, p, 10) catch 4040 else 4040;
+            var srv = @import("server.zig").RemoteServer.init(self.allocator, port);
+            srv.run() catch {};
+            return true;
+        }
+
         if (std.mem.eql(u8, cmd, "/mcp")) {
             self.mcp_mgr.listMcpTools();
             return true;

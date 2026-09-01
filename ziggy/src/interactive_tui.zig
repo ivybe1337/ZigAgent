@@ -10,6 +10,8 @@ pub const SlashItem = struct {
 
 pub const AVAILABLE_COMMANDS = [_]SlashItem{
     .{ .cmd = "/settings", .desc = "Interactive settings & preferences panel" },
+    .{ .cmd = "/remote", .desc = "Launch mobile companion cloud gateway" },
+    .{ .cmd = "/serve", .desc = "Start background HTTP & WebSocket remote server" },
     .{ .cmd = "/commands", .desc = "Explore categorized commands & subcategories" },
     .{ .cmd = "/terminal", .desc = "Terminal & shell command runner (!<cmd>)" },
     .{ .cmd = "/mcp", .desc = "Model Context Protocol (MCP) servers & tools" },
