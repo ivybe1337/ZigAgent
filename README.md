@@ -111,9 +111,11 @@ Extend ZigAgent's core capabilities using standalone binaries, Python/Shell scri
 | :--- | :--- | :--- |
 | **Shell** | `!<cmd>` | Run direct terminal commands instantly (`!ls -la`, `!git status`, `!zig build`) |
 | **Settings** | `/settings` | Open interactive full-screen TUI settings panel (9 controls) |
-| **Autonomy** | `/unbounded` | Toggle infinite autonomy loop without step limits |
 | **Deliberation**| `/deliberate <goal>` | Run 4-pass recursive metacognition (Think -> Challenge -> Rethink -> Refine) |
+| **Swarm** | `/swarm <task>` | Launch 4-agent parallel swarm orchestration (Researcher, Coder, Auditor, QA) |
+| **AST Search** | `/query <symbol>` | Fast structural AST symbol query across codebase |
 | **Self-Evolution**| `/evolve` | Run autonomous codebase self-analysis and hot-recompile |
+| **Messaging** | `/listen` | Start live inbound messaging listener daemon (Telegram/iMessage/WhatsApp) |
 | **Messaging** | `/bridges` | Inspect iMessage, Telegram, WhatsApp, and Google Messages gateways |
 | **Messaging** | `/msg <plat> <to> <txt>` | Dispatch outbound message via bridge |
 | **Protocols**| `/mcp` | List connected MCP servers and external tools |

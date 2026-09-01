@@ -27,6 +27,8 @@ const plugins = @import("plugins.zig");
 const recursive_thought = @import("recursive_thought.zig");
 const self_improve = @import("self_improve.zig");
 const messaging = @import("messaging.zig");
+const ast_query = @import("ast_query.zig");
+const swarm = @import("swarm.zig");
 
 pub const Repl = struct {
     allocator: std.mem.Allocator,
@@ -47,6 +49,8 @@ pub const Repl = struct {
     recursive_engine: recursive_thought.RecursiveThinkingEngine,
     self_improve_engine: self_improve.SelfImprovementEngine,
     messaging_hub: messaging.MessagingHub,
+    ast_query_engine: ast_query.AstQueryEngine,
+    swarm_orchestrator: swarm.SwarmOrchestrator,
     history: std.ArrayList([]const u8),
     active_model: []const u8 = "openai/gpt-oss-120b",
 
@@ -73,6 +77,8 @@ pub const Repl = struct {
             .recursive_engine = recursive_thought.RecursiveThinkingEngine.init(allocator),
             .self_improve_engine = self_improve.SelfImprovementEngine.init(allocator),
             .messaging_hub = messaging.MessagingHub.init(allocator),
+            .ast_query_engine = ast_query.AstQueryEngine.init(allocator),
+            .swarm_orchestrator = swarm.SwarmOrchestrator.init(allocator),
             .history = .empty,
             .active_model = "openai/gpt-oss-120b",
         };
@@ -240,6 +246,24 @@ pub const Repl = struct {
             } else {
                 self.self_improve_engine.analyzeSelf();
             }
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/swarm")) {
+            const t = if (arg1) |task| task else "Inspect project architecture and optimize memory layout";
+            var results: std.ArrayList(swarm.SwarmAgentResult) = .empty;
+            defer results.deinit(self.allocator);
+            self.swarm_orchestrator.executeSwarm(t, &results);
+            self.swarm_orchestrator.renderSwarm(results.items);
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/query") or std.mem.eql(u8, cmd, "/ast")) {
+            const q = if (arg1) |sym| sym else "";
+            var syms: std.ArrayList(ast_query.AstSymbol) = .empty;
+            defer syms.deinit(self.allocator);
+            self.ast_query_engine.querySymbols(q, "src", &syms);
+            self.ast_query_engine.renderSymbols(syms.items);
             return true;
         }
 

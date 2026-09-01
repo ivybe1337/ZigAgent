@@ -11,6 +11,8 @@ pub const SlashItem = struct {
 pub const AVAILABLE_COMMANDS = [_]SlashItem{
     .{ .cmd = "/settings", .desc = "Interactive settings & preferences panel" },
     .{ .cmd = "/deliberate", .desc = "Run 4-pass recursive metacognitive deliberation" },
+    .{ .cmd = "/swarm", .desc = "Execute 4-agent parallel swarm orchestration" },
+    .{ .cmd = "/query", .desc = "Structural AST symbol query across codebase" },
     .{ .cmd = "/evolve", .desc = "Run autonomous self-analysis & code evolution" },
     .{ .cmd = "/msg", .desc = "Send message via iMessage, Telegram, or WhatsApp" },
     .{ .cmd = "/listen", .desc = "Start live inbound messaging listener daemon" },
