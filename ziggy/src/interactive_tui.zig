@@ -10,7 +10,11 @@ pub const SlashItem = struct {
 
 pub const AVAILABLE_COMMANDS = [_]SlashItem{
     .{ .cmd = "/settings", .desc = "Interactive settings & preferences panel" },
-    .{ .cmd = "/remote", .desc = "Launch mobile companion cloud gateway" },
+    .{ .cmd = "/deliberate", .desc = "Run 4-pass recursive metacognitive deliberation" },
+    .{ .cmd = "/evolve", .desc = "Run autonomous self-analysis & code evolution" },
+    .{ .cmd = "/msg", .desc = "Send message via iMessage, Telegram, or WhatsApp" },
+    .{ .cmd = "/bridges", .desc = "Inspect multi-platform messaging gateways" },
+    .{ .cmd = "/remote", .desc = "Launch Manus-style cloud desktop gateway" },
     .{ .cmd = "/serve", .desc = "Start background HTTP & WebSocket remote server" },
     .{ .cmd = "/commands", .desc = "Explore categorized commands & subcategories" },
     .{ .cmd = "/terminal", .desc = "Terminal & shell command runner (!<cmd>)" },

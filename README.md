@@ -44,18 +44,21 @@ Whether running in headless CI, an interactive true-color terminal TUI, or the n
 │  [1. Frontends & Control Centers]                                           │
 │  • Interactive Terminal REPL:          ziggy                                │
 │  • Live Telemetry HUD TUI:             ziggy tui "<goal>"                   │
+│  • Manus-Style Cloud Desktop:          Port 4040 Web Canvas (3-column UI)   │
 │  • Native macOS Cocoa Desktop App:     ZigAgent.app                         │
-│  • Mobile Companion App (iOS/Android): mobile/ & PWA (Port 4040)            │
+│  • Mobile Companion App (iOS/Android): mobile/ & PWA                        │
 │  • VS Code Native Extension:           extension/                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  [2. Cognitive Planning & Execution]                                        │
+│  • 4-Pass Recursive Metacognition:     Think -> Challenge -> Rethink -> Ref │
+│  • Autonomous Self-Improvement:        Self-recompile with hot-restart wake │
 │  • Unbounded Action Loop:              Infinite step invariant convergence  │
 │  • Non-Blocking ESC Interruption:      Mid-flight pause & steering inject   │
-│  • Speculative Branching Engine:       Parallel candidate fork & rank       │
 │  • 3-Lens Consensus Council:           Security / Perf / Arch cross-critique│
 │  • AST Syntax Integrity Guard:         Balanced delimiter synthesis filter  │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  [3. Dynamic Protocols, Skills & Extensions]                                │
+│  [3. Dynamic Protocols, Omnichannel & Extensions]                           │
+│  • Omnichannel Messaging Bridges:      iMessage, Telegram, WhatsApp, RCS    │
 │  • MCP Server Host (JSON-RPC 2.0):     Dynamic stdio tool discovery & call  │
 │  • Domain Playbook Skill System:       Modular markdown/YAML workflows      │
 │  • Dynamic Plugin Registry:            Binary & script capability hooks     │
@@ -109,6 +112,10 @@ Extend ZigAgent's core capabilities using standalone binaries, Python/Shell scri
 | **Shell** | `!<cmd>` | Run direct terminal commands instantly (`!ls -la`, `!git status`, `!zig build`) |
 | **Settings** | `/settings` | Open interactive full-screen TUI settings panel (9 controls) |
 | **Autonomy** | `/unbounded` | Toggle infinite autonomy loop without step limits |
+| **Deliberation**| `/deliberate <goal>` | Run 4-pass recursive metacognition (Think -> Challenge -> Rethink -> Refine) |
+| **Self-Evolution**| `/evolve` | Run autonomous codebase self-analysis and hot-recompile |
+| **Messaging** | `/bridges` | Inspect iMessage, Telegram, WhatsApp, and Google Messages gateways |
+| **Messaging** | `/msg <plat> <to> <txt>` | Dispatch outbound message via bridge |
 | **Protocols**| `/mcp` | List connected MCP servers and external tools |
 | **Skills** | `/skills` | Browse loaded skill playbooks (`/skill <name>` to activate) |
 | **Plugins** | `/plugins` | Inspect installed plugins and extension bridges |

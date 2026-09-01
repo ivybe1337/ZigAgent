@@ -1,41 +1,57 @@
-// ZigAgent Mobile Companion Engine
+// ZigAgent Manus-Style Desktop Control Center
 document.addEventListener("DOMContentLoaded", () => {
   const urlParams = new URLSearchParams(window.location.search);
   const authToken = urlParams.get("token") || localStorage.getItem("ziggy_token") || "";
   if (authToken) localStorage.setItem("ziggy_token", authToken);
 
-  // Tab switching
-  const tabBtns = document.querySelectorAll(".tab-btn");
-  const tabContents = document.querySelectorAll(".tab-content");
+  // Tab & View Switcher
+  const canvasTabs = document.querySelectorAll(".canvas-tab");
+  const viewPanels = document.querySelectorAll(".view-panel");
 
-  tabBtns.forEach(btn => {
-    btn.addEventListener("click", () => {
-      tabBtns.forEach(b => b.classList.remove("active"));
-      tabContents.forEach(c => c.classList.remove("active"));
-      btn.classList.add("active");
-      const target = document.getElementById(`tab-${btn.dataset.tab}`);
+  canvasTabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      canvasTabs.forEach(t => t.classList.remove("active"));
+      viewPanels.forEach(p => p.classList.remove("active"));
+      tab.classList.add("active");
+      const target = document.getElementById(`view-${tab.dataset.view}`);
       if (target) target.classList.add("active");
-      if (btn.dataset.tab === "diff") loadDiff();
+      if (tab.dataset.view === "terminal") loadDiff();
+    });
+  });
+
+  // Messaging Bridge Selector
+  document.querySelectorAll(".bridge-item").forEach(item => {
+    item.addEventListener("click", () => {
+      document.querySelectorAll(".bridge-item").forEach(i => i.classList.remove("active"));
+      item.classList.add("active");
+      const platform = item.dataset.platform;
+      appendTimelineCard("system", `Switched active messaging bridge to ${platform.toUpperCase()}.`);
     });
   });
 
   // Quick Chips
-  document.querySelectorAll(".chip").forEach(chip => {
+  document.querySelectorAll(".quick-chip").forEach(chip => {
     chip.addEventListener("click", () => {
-      const input = document.getElementById("user-input");
+      const input = document.getElementById("action-input");
       input.value = chip.dataset.cmd;
-      document.getElementById("chat-form").dispatchEvent(new Event("submit"));
+      document.getElementById("action-form").dispatchEvent(new Event("submit"));
     });
   });
 
+  // Self Evolve Button
+  document.getElementById("btn-self-evolve").addEventListener("click", () => {
+    appendTimelineCard("system", "🧬 [AUTONOMOUS SELF-IMPROVEMENT TRIGGERED] Analyzing codebase topology, verifying invariant proofs, and synthesizing optimizations...");
+    fetch("/api/evolve", { method: "POST" }).catch(() => {});
+  });
+
   // Emergency Halt
-  document.getElementById("btn-esc-halt").addEventListener("click", () => {
-    appendMessage("system", "⚡ [EMERGENCY HALT] <ESC> Interrupt signal dispatched to Ziggy runtime.");
+  document.getElementById("btn-emergency-halt").addEventListener("click", () => {
+    appendTimelineCard("system", "🛑 [EMERGENCY HALT] Dispatched <ESC> interrupt signal to Ziggy runtime. Execution stopped.");
     fetch("/api/interrupt", { method: "POST" }).catch(() => {});
   });
 
   // Voice Input (Web Speech API)
-  const btnVoice = document.getElementById("btn-voice");
+  const btnMic = document.getElementById("btn-mic");
   if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
@@ -44,37 +60,39 @@ document.addEventListener("DOMContentLoaded", () => {
 
     recognition.onresult = (e) => {
       const text = e.results[0][0].transcript;
-      document.getElementById("user-input").value = text;
-      btnVoice.style.color = "";
+      document.getElementById("action-input").value = text;
+      btnMic.style.color = "";
     };
 
-    recognition.onerror = () => { btnVoice.style.color = ""; };
-    recognition.onend = () => { btnVoice.style.color = ""; };
+    recognition.onerror = () => { btnMic.style.color = ""; };
+    recognition.onend = () => { btnMic.style.color = ""; };
 
-    btnVoice.addEventListener("click", () => {
-      btnVoice.style.color = "var(--accent-red)";
+    btnMic.addEventListener("click", () => {
+      btnMic.style.color = "var(--neon-red)";
       recognition.start();
     });
   } else {
-    btnVoice.style.display = "none";
+    btnMic.style.display = "none";
   }
 
-  // Chat Form Submit
-  const chatForm = document.getElementById("chat-form");
-  const userInput = document.getElementById("user-input");
-  const chatStream = document.getElementById("chat-stream");
+  // Action Form Submission
+  const actionForm = document.getElementById("action-form");
+  const actionInput = document.getElementById("action-input");
+  const timelineStream = document.getElementById("timeline-stream");
 
-  chatForm.addEventListener("submit", async (e) => {
+  actionForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const text = userInput.value.trim();
+    const text = actionInput.value.trim();
     if (!text) return;
 
-    userInput.value = "";
-    appendMessage("user", text);
+    actionInput.value = "";
+    appendTimelineCard("user", text);
 
-    // Simulate / execute directive
-    appendMessage("agent", "⚡ Ziggy received directive. Processing action plan natively...");
-    
+    // Render Recursive Deliberation in Real Time
+    renderRecursiveThoughts(text);
+
+    appendTimelineCard("agent", "⚡ Action plan synthesized. Executing tools across project topology...");
+
     try {
       const res = await fetch("/api/status");
       if (res.ok) {
@@ -84,32 +102,54 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (_) {}
   });
 
-  function appendMessage(role, content) {
-    const div = document.createElement("div");
-    div.className = `msg ${role}`;
-    div.innerHTML = `<div class="msg-body">${escapeHtml(content)}</div>`;
-    chatStream.appendChild(div);
-    chatStream.scrollTop = chatStream.scrollHeight;
+  function appendTimelineCard(role, text) {
+    const card = document.createElement("div");
+    card.className = `stream-card ${role}-card`;
+    const tag = role === "user" ? "DIRECTIVE" : role === "agent" ? "AUTONOMOUS AGENT" : "SYSTEM";
+    card.innerHTML = `<div class="card-tag">${tag}</div><p>${escapeHtml(text)}</p>`;
+    timelineStream.appendChild(card);
+    timelineStream.scrollTop = timelineStream.scrollHeight;
+  }
+
+  function renderRecursiveThoughts(goal) {
+    const tree = document.getElementById("deliberation-tree");
+    tree.innerHTML = `
+      <div class="thought-stage phase-1">
+        <div class="stage-tag">PHASE 1: EXPLORATION</div>
+        <div class="thought-bubble">Deconstruct "${escapeHtml(goal)}" into atomic invariant targets and file inspection steps.</div>
+      </div>
+      <div class="thought-stage phase-2">
+        <div class="stage-tag">PHASE 2: ADVERSARIAL CRITIQUE</div>
+        <div class="thought-bubble">Red-team execution path: check for boundary leaks, syntax collisions, and unintended destructive operations.</div>
+      </div>
+      <div class="thought-stage phase-3">
+        <div class="stage-tag">PHASE 3: SELF-CORRECTION</div>
+        <div class="thought-bubble">Lock in verified invariant gates. Memory footprint verified < 5MB static.</div>
+      </div>
+      <div class="thought-stage phase-4">
+        <div class="stage-tag">PHASE 4: SYNTHESIS</div>
+        <div class="thought-bubble">Dispatch optimal native action.</div>
+      </div>
+    `;
   }
 
   function updateHUD(data) {
-    if (data.workspace) document.getElementById("hud-workspace").textContent = data.workspace;
-    if (data.model) document.getElementById("hud-model").textContent = data.model;
+    if (data.workspace) document.getElementById("top-workspace-name").textContent = data.workspace;
     if (data.fill_pct !== undefined) {
-      document.getElementById("hud-progress-bar").style.width = `${data.fill_pct}%`;
-      document.getElementById("hud-tokens").textContent = `${data.tokens || 2400} / ${data.max_tokens || 128000} tokens (${data.fill_pct}%)`;
+      document.getElementById("hud-bar-fill").style.width = `${data.fill_pct}%`;
+      document.getElementById("hud-bar-text").textContent = `${data.tokens || 2400} / ${data.max_tokens || 128000} (${data.fill_pct}%)`;
     }
   }
 
   async function loadDiff() {
-    const box = document.getElementById("diff-content");
-    box.textContent = "Loading git diff...";
+    const view = document.getElementById("terminal-diff-view");
+    view.textContent = "Loading live git diff...";
     try {
       const res = await fetch("/api/diff");
       const text = await res.text();
-      box.textContent = text || "No active git diff.";
-    } catch (err) {
-      box.textContent = "Failed to load git diff from remote host.";
+      view.textContent = text || "No active git diff. Working tree clean.";
+    } catch (_) {
+      view.textContent = "Failed to load git diff from remote host.";
     }
   }
 

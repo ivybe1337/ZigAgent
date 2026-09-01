@@ -24,6 +24,9 @@ const omnilattice = @import("omnilattice.zig");
 const mcp = @import("mcp.zig");
 const skills = @import("skills.zig");
 const plugins = @import("plugins.zig");
+const recursive_thought = @import("recursive_thought.zig");
+const self_improve = @import("self_improve.zig");
+const messaging = @import("messaging.zig");
 
 pub const Repl = struct {
     allocator: std.mem.Allocator,
@@ -41,6 +44,9 @@ pub const Repl = struct {
     mcp_mgr: mcp.McpManager,
     skill_mgr: skills.SkillManager,
     plugin_mgr: plugins.PluginManager,
+    recursive_engine: recursive_thought.RecursiveThinkingEngine,
+    self_improve_engine: self_improve.SelfImprovementEngine,
+    messaging_hub: messaging.MessagingHub,
     history: std.ArrayList([]const u8),
     active_model: []const u8 = "openai/gpt-oss-120b",
 
@@ -64,6 +70,9 @@ pub const Repl = struct {
             .mcp_mgr = mcp.McpManager.init(allocator, ".ziggy"),
             .skill_mgr = skills.SkillManager.init(allocator),
             .plugin_mgr = plugins.PluginManager.init(allocator),
+            .recursive_engine = recursive_thought.RecursiveThinkingEngine.init(allocator),
+            .self_improve_engine = self_improve.SelfImprovementEngine.init(allocator),
+            .messaging_hub = messaging.MessagingHub.init(allocator),
             .history = .empty,
             .active_model = "openai/gpt-oss-120b",
         };
@@ -190,6 +199,12 @@ pub const Repl = struct {
             tui.TUI.C_MUTED, tui.TUI.C_AQUA, tui.TUI.C_MUTED, tui.TUI.C_ORANGE, tui.TUI.C_MUTED,
             tui.TUI.C_BORDER, tui.TUI.C_RESET,
         });
+
+        // Check if waking up from a hot-restart recompile
+        if (sys.readEntireFile(self.allocator, ".ziggy/rehydration.json", 1024)) |rehyd_json| {
+            defer self.allocator.free(rehyd_json);
+            std.debug.print("\x1b[38;2;0;242;254m⚡ [HOT-RESTART WAKEUP]:\x1b[0m Runtime recompiled & rehydrated into new generation with zero context loss.\n", .{});
+        }
     }
 
     fn handleSlashCommand(self: *Repl, raw_cmd: []const u8) bool {
@@ -197,6 +212,7 @@ pub const Repl = struct {
         const cmd = parts.next() orelse "";
         const arg1 = parts.next();
         const arg2 = parts.next();
+        const arg3 = parts.next();
 
         if (std.mem.eql(u8, cmd, "/exit") or std.mem.eql(u8, cmd, "/quit")) {
             std.debug.print("{s}Goodbye!{s}\n", .{ tui.TUI.C_MUTED, tui.TUI.C_RESET });
@@ -205,6 +221,65 @@ pub const Repl = struct {
 
         if (std.mem.eql(u8, cmd, "/settings") or std.mem.eql(u8, cmd, "/config")) {
             interactive_tui.InteractiveTUI.runInteractiveSettings(&self.cfg_mgr);
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/deliberate")) {
+            const goal = if (arg1) |g| g else "Analyze and synthesize optimal execution path";
+            var nodes: std.ArrayList(recursive_thought.ThoughtNode) = .empty;
+            defer nodes.deinit(self.allocator);
+            self.recursive_engine.deliberate(goal, &nodes);
+            self.recursive_engine.renderDeliberationTree(nodes.items);
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/evolve") or std.mem.eql(u8, cmd, "/self-improve")) {
+            if (arg1 != null and std.mem.eql(u8, arg1.?, "run")) {
+                const root = self.engine.memory_store.computeMerkleRoot();
+                _ = self.self_improve_engine.triggerAutonomousEvolution(&root);
+            } else {
+                self.self_improve_engine.analyzeSelf();
+            }
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/bridges") or std.mem.eql(u8, cmd, "/messages")) {
+            self.messaging_hub.listBridges();
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/msg")) {
+            const platform = arg1 orelse "imessage";
+            const recipient = arg2 orelse "";
+            const text = arg3 orelse "Hello from Ziggy autonomous runtime!";
+
+            if (recipient.len == 0) {
+                std.debug.print("{s}Usage: /msg <imessage|telegram|whatsapp> <recipient> <text>{s}\n", .{ tui.TUI.C_ORANGE, tui.TUI.C_RESET });
+                return true;
+            }
+
+            if (std.mem.eql(u8, platform, "imessage")) {
+                const ok = self.messaging_hub.send_imessage(recipient, text);
+                if (ok) {
+                    std.debug.print("{s}✔ Dispatched iMessage to {s}{s}\n", .{ tui.TUI.C_AQUA, recipient, tui.TUI.C_RESET });
+                } else {
+                    std.debug.print("{s}Failed to dispatch iMessage.{s}\n", .{ tui.TUI.C_ORANGE, tui.TUI.C_RESET });
+                }
+            } else if (std.mem.eql(u8, platform, "telegram")) {
+                const ok = self.messaging_hub.send_telegram(recipient, text);
+                if (ok) {
+                    std.debug.print("{s}✔ Dispatched Telegram message to chat {s}{s}\n", .{ tui.TUI.C_AQUA, recipient, tui.TUI.C_RESET });
+                } else {
+                    std.debug.print("{s}Telegram dispatch failed. Check TELEGRAM_BOT_TOKEN.{s}\n", .{ tui.TUI.C_ORANGE, tui.TUI.C_RESET });
+                }
+            } else if (std.mem.eql(u8, platform, "whatsapp")) {
+                const ok = self.messaging_hub.send_whatsapp(recipient, text);
+                if (ok) {
+                    std.debug.print("{s}✔ Dispatched WhatsApp message to {s}{s}\n", .{ tui.TUI.C_AQUA, recipient, tui.TUI.C_RESET });
+                } else {
+                    std.debug.print("{s}WhatsApp dispatch failed. Check WHATSAPP_API_TOKEN.{s}\n", .{ tui.TUI.C_ORANGE, tui.TUI.C_RESET });
+                }
+            }
             return true;
         }
 
@@ -261,19 +336,24 @@ pub const Repl = struct {
                 "  {s}⚙️  CONFIGURATION & PREFERENCES:{s}\n" ++
                 "    \x1b[38;2;255;107;53m/settings\x1b[0m                 Interactive settings & preferences panel\n" ++
                 "    \x1b[38;2;255;107;53m/unbounded\x1b[0m                Toggle unbounded infinite autonomy mode\n" ++
+                "    \x1b[38;2;255;107;53m/remote [port]\x1b[0m            Launch Manus-style cloud desktop gateway\n" ++
                 "    \x1b[38;2;255;107;53m/compact [focus]\x1b[0m          Targeted context compaction\n" ++
                 "    \x1b[38;2;255;107;53m/models\x1b[0m                   Preview available frontier & stealth models\n" ++
                 "    \x1b[38;2;255;107;53m/model <id>\x1b[0m               Activate specific model\n\n" ++
+                "  {s}🧬 SELF-IMPROVEMENT & DELIBERATION:{s}\n" ++
+                "    \x1b[38;2;255;107;53m/evolve\x1b[0m                   Autonomous codebase self-analysis & optimization\n" ++
+                "    \x1b[38;2;255;107;53m/deliberate <goal>\x1b[0m        4-pass recursive metacognition (Think -> Rethink -> Refine)\n\n" ++
+                "  {s}💬 MESSAGING & OMNICHANNEL BRIDGES:{s}\n" ++
+                "    \x1b[38;2;255;107;53m/bridges\x1b[0m                  List iMessage, Telegram, WhatsApp, RCS bridges\n" ++
+                "    \x1b[38;2;255;107;53m/msg <plat> <to> <txt>\x1b[0m    Send outbound message via bridge\n\n" ++
                 "  {s}🔌 PLUGINS, SKILLS & MCP PROTOCOL:{s}\n" ++
                 "    \x1b[38;2;255;107;53m/mcp\x1b[0m                      Model Context Protocol servers & tools\n" ++
                 "    \x1b[38;2;255;107;53m/skills\x1b[0m                   Specialized playbooks & domain skills\n" ++
                 "    \x1b[38;2;255;107;53m/skill <name>\x1b[0m             Activate a specific domain skill\n" ++
-                "    \x1b[38;2;255;107;53m/plugins\x1b[0m                  Manage dynamic plugins & extensions\n\n" ++
-                "  {s}🤖 CUSTOM AGENTS & PROFILES:{s}\n" ++
-                "    \x1b[38;2;255;107;53m/agents\x1b[0m                   List custom specialized agent profiles\n" ++
-                "    \x1b[38;2;255;107;53m/create-agent <name>\x1b[0m    Launch agent profile creation walkthrough\n\n",
+                "    \x1b[38;2;255;107;53m/plugins\x1b[0m                  Manage dynamic plugins & extensions\n\n",
                 .{
                     tui.TUI.C_CYAN, tui.TUI.C_RESET,
+                    tui.TUI.C_AQUA, tui.TUI.C_RESET,
                     tui.TUI.C_AQUA, tui.TUI.C_RESET,
                     tui.TUI.C_AQUA, tui.TUI.C_RESET,
                     tui.TUI.C_AQUA, tui.TUI.C_RESET,

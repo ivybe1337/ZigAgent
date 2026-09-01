@@ -2,122 +2,222 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>⚡ ZigAgent Mobile Companion</title>
+  <title>⚡ ZigAgent Cloud Desktop (Manus-Style Workspace)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#0d1117" />
+  <meta name="theme-color" content="#070a0f" />
   <link rel="apple-touch-icon" href="/icon.png" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <div class="app-container">
-    <!-- Top Mobile Header & Context HUD -->
-    <header class="top-nav">
-      <div class="brand-row">
-        <div class="brand-title">
-          <span class="pulse-dot"></span>
-          <strong>ZIGAGENT</strong>
-          <span class="badge">REMOTE</span>
+  <div class="manus-desktop">
+    <!-- Top Global App Bar -->
+    <header class="manus-top-bar">
+      <div class="top-left">
+        <div class="brand-group">
+          <div class="pulse-ring"></div>
+          <span class="logo-title">ZIGAGENT</span>
+          <span class="status-pill online">MANUS CLOUD DESKTOP</span>
         </div>
-        <div class="header-actions">
-          <button id="btn-esc-halt" class="btn-danger" title="Emergency Stop (<ESC>)">🛑 HALT</button>
+        <div class="session-crumb" id="top-workspace-name">~/LocalBuilds/ZigAgent</div>
+      </div>
+
+      <div class="top-center">
+        <!-- Live HUD Context Bar -->
+        <div class="hud-capsule">
+          <span class="hud-label">CONTEXT:</span>
+          <div class="hud-bar-track">
+            <div id="hud-bar-fill" class="hud-bar-fill" style="width: 3%;"></div>
+          </div>
+          <span id="hud-bar-text" class="hud-val">2.4k / 128k (2%)</span>
+          <span class="hud-badge">⚡ UNBOUNDED</span>
         </div>
       </div>
-      
-      <!-- Live Context & HUD Bar -->
-      <div class="context-hud">
-        <div class="hud-labels">
-          <span id="hud-workspace">~/LocalBuilds/ZigAgent</span>
-          <span id="hud-model">openai/gpt-oss-120b</span>
-        </div>
-        <div class="progress-track">
-          <div id="hud-progress-bar" class="progress-fill" style="width: 2%;"></div>
-        </div>
-        <div class="hud-stats">
-          <span id="hud-tokens">2.4k / 128k tokens (2%)</span>
-          <span class="hud-reasoning">⚡ UNBOUNDED</span>
-        </div>
+
+      <div class="top-right">
+        <button id="btn-self-evolve" class="btn-ghost-cyan" title="Trigger Self-Improvement Cycle">🧬 EVOLVE</button>
+        <button id="btn-emergency-halt" class="btn-danger-glow" title="Emergency Stop (<ESC>)">🛑 HALT</button>
       </div>
     </header>
 
-    <!-- Navigation Tabs -->
-    <nav class="nav-tabs">
-      <button class="tab-btn active" data-tab="chat">💬 Chat & Actions</button>
-      <button class="tab-btn" data-tab="diff">🗂️ Git Diff</button>
-      <button class="tab-btn" data-tab="doctor">🩺 Doctor</button>
-      <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
-    </nav>
-
-    <!-- Tab 1: Chat Stream -->
-    <main id="tab-chat" class="tab-content active">
-      <div id="chat-stream" class="chat-stream">
-        <div class="msg system">
-          <div class="msg-header">⚡ ZIGAGENT ENGINE READY</div>
-          <div class="msg-body">Mobile cloud gateway connected. Real-time token streaming and non-blocking remote steering active.</div>
+    <!-- Main 3-Column Manus Canvas Layout -->
+    <div class="manus-workspace-grid">
+      <!-- Column 1: Left Navigation & Messaging Dock -->
+      <aside class="left-dock">
+        <div class="dock-section">
+          <div class="section-label">MESSAGING BRIDGES</div>
+          <div class="bridge-list">
+            <div class="bridge-item active" data-platform="imessage">
+              <span class="bridge-icon">💬</span>
+              <div class="bridge-info">
+                <strong>iMessage</strong>
+                <span>Native AppleScript</span>
+              </div>
+              <span class="dot-online"></span>
+            </div>
+            <div class="bridge-item" data-platform="telegram">
+              <span class="bridge-icon">✈️</span>
+              <div class="bridge-info">
+                <strong>Telegram</strong>
+                <span>Bot Webhook</span>
+              </div>
+              <span class="dot-ready"></span>
+            </div>
+            <div class="bridge-item" data-platform="whatsapp">
+              <span class="bridge-icon">📱</span>
+              <div class="bridge-info">
+                <strong>WhatsApp</strong>
+                <span>Cloud API</span>
+              </div>
+              <span class="dot-ready"></span>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <!-- Live Mobile Steering & Input Bar -->
-      <div class="input-container">
-        <div class="quick-chips">
-          <button class="chip" data-cmd="/doctor">🩺 /doctor</button>
-          <button class="chip" data-cmd="/mcp">🔌 /mcp</button>
-          <button class="chip" data-cmd="/skills">🧠 /skills</button>
-          <button class="chip" data-cmd="!git status">💻 !git status</button>
+        <div class="dock-section file-explorer">
+          <div class="section-label">WORKSPACE EXPLORER</div>
+          <div class="tree-root">
+            <div class="tree-item folder">📁 <strong>src/</strong></div>
+            <div class="tree-item file">📄 agent.zig</div>
+            <div class="tree-item file">📄 memory.zig</div>
+            <div class="tree-item file">📄 tools.zig</div>
+            <div class="tree-item file">📄 server.zig</div>
+            <div class="tree-item file">📄 recursive_thought.zig</div>
+            <div class="tree-item file">📄 self_improve.zig</div>
+            <div class="tree-item file">📄 messaging.zig</div>
+          </div>
         </div>
-        <form id="chat-form" class="input-form">
-          <button type="button" id="btn-voice" class="btn-icon" title="Voice Input">🎙️</button>
-          <input type="text" id="user-input" placeholder="Type instruction, !cmd, or /slash..." autocomplete="off" autocorrect="off" />
-          <button type="submit" id="btn-send" class="btn-primary">Send</button>
-        </form>
-      </div>
-    </main>
 
-    <!-- Tab 2: Git Diff Viewer -->
-    <section id="tab-diff" class="tab-content">
-      <div class="diff-header">
-        <h3>Live Workspace Changes</h3>
-        <button id="btn-refresh-diff" class="btn-secondary">Refresh</button>
-      </div>
-      <pre id="diff-content" class="code-box">Loading git diff...</pre>
-    </section>
-
-    <!-- Tab 3: System Doctor -->
-    <section id="tab-doctor" class="tab-content">
-      <div class="doctor-card">
-        <h3>System & Memory Diagnostic</h3>
-        <ul class="doctor-list">
-          <li><span>Runtime Engine</span><strong class="text-green">Pure Native Zig 0.16.0</strong></li>
-          <li><span>Memory Architecture</span><strong>L1 Ring + L3 Merkle Forest</strong></li>
-          <li><span>Allocator</span><strong>Step Arena (Zero-GC)</strong></li>
-          <li><span>MCP Protocol</span><strong class="text-green">JSON-RPC 2.0 Active</strong></li>
-          <li><span>Remote Gateway</span><strong class="text-green">Online (Port 4040)</strong></li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- Tab 4: Settings -->
-    <section id="tab-settings" class="tab-content">
-      <div class="settings-card">
-        <h3>Remote Settings</h3>
-        <div class="setting-item">
-          <span>Autonomy Mode</span>
-          <select id="sel-autonomy">
-            <option value="unbounded">⚡ Unbounded Autonomy</option>
-            <option value="bounded">Bounded (15 steps)</option>
-          </select>
+        <div class="dock-section memory-status">
+          <div class="section-label">EPISTEMIC STATE</div>
+          <div class="merkle-box">
+            <span class="merkle-label">Merkle Forest Root:</span>
+            <code id="merkle-root-display">e3b0c44298fc1c149afbf4c8...</code>
+          </div>
         </div>
-        <div class="setting-item">
-          <span>Thinking Effort</span>
-          <select id="sel-reasoning">
-            <option value="max">Max Deep Reasoning</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-          </select>
+      </aside>
+
+      <!-- Column 2: Center Viewport (Manus Live Action Canvas) -->
+      <main class="center-canvas">
+        <div class="canvas-header">
+          <div class="canvas-tabs">
+            <button class="canvas-tab active" data-view="timeline">⚡ Live Action Stream</button>
+            <button class="canvas-tab" data-view="terminal">💻 Terminal & Git Diff</button>
+            <button class="canvas-tab" data-view="doctor">🩺 System Health</button>
+          </div>
+          <span class="live-action-badge">● LIVE AUTONOMOUS EXECUTION</span>
         </div>
-      </div>
-    </section>
+
+        <!-- View 1: Timeline & Action Cards -->
+        <div id="view-timeline" class="view-panel active">
+          <div id="timeline-stream" class="timeline-stream">
+            <div class="stream-card system-card">
+              <div class="card-tag">SYSTEM INITIALIZED</div>
+              <p>Manus-style Agent Desktop connected to Ziggy runtime. Recursive deliberation and self-improvement loops active.</p>
+            </div>
+          </div>
+
+          <!-- Bottom Prompt & Steering Box -->
+          <div class="steering-tray">
+            <div class="chip-tray">
+              <button class="quick-chip" data-cmd="/evolve">🧬 /evolve</button>
+              <button class="quick-chip" data-cmd="/skills">🧠 /skills</button>
+              <button class="quick-chip" data-cmd="/mcp">🔌 /mcp</button>
+              <button class="quick-chip" data-cmd="/doctor">🩺 /doctor</button>
+              <button class="quick-chip" data-cmd="!git status">💻 !git status</button>
+            </div>
+            <form id="action-form" class="action-form">
+              <button type="button" id="btn-mic" class="btn-icon" title="Voice Input">🎙️</button>
+              <input type="text" id="action-input" placeholder="Instruct Ziggy, send !shell command, or steer mid-flight..." autocomplete="off" />
+              <button type="submit" id="btn-submit" class="btn-neon-send">EXECUTE</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- View 2: Terminal & Git Diff View -->
+        <div id="view-terminal" class="view-panel">
+          <div class="terminal-container">
+            <div class="terminal-bar">
+              <span>LIVE WORKSPACE GIT DIFF</span>
+              <button id="btn-refresh-diff" class="btn-micro">REFRESH</button>
+            </div>
+            <pre id="terminal-diff-view" class="terminal-code">Loading git diff...</pre>
+          </div>
+        </div>
+
+        <!-- View 3: System Doctor -->
+        <div id="view-doctor" class="view-panel">
+          <div class="doctor-panel">
+            <h3>ZigAgent System Architecture & Diagnostics</h3>
+            <div class="diag-grid">
+              <div class="diag-card">
+                <span>Core Binary</span>
+                <strong>610 KB (Pure Native Zig 0.16.0)</strong>
+              </div>
+              <div class="diag-card">
+                <span>Memory Engine</span>
+                <strong>Thermodynamic L1 Ring + L3 Merkle Forest</strong>
+              </div>
+              <div class="diag-card">
+                <span>Reasoning Loop</span>
+                <strong>4-Pass Recursive Metacognition</strong>
+              </div>
+              <div class="diag-card">
+                <span>Messaging Bridges</span>
+                <strong>iMessage, Telegram, WhatsApp, RCS</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Column 3: Right Panel (Recursive Deliberation & Metacognitive Stream) -->
+      <aside class="right-deliberation">
+        <div class="deliberation-header">
+          <span>RECURSIVE DELIBERATION</span>
+          <span class="depth-badge">4-PASS REFLECTION</span>
+        </div>
+
+        <div id="deliberation-tree" class="deliberation-tree">
+          <div class="thought-stage phase-1">
+            <div class="stage-tag">PHASE 1: EXPLORATION</div>
+            <div class="thought-bubble">Formulate initial hypotheses and identify required toolchains for goal execution.</div>
+          </div>
+          <div class="thought-stage phase-2">
+            <div class="stage-tag">PHASE 2: ADVERSARIAL CRITIQUE</div>
+            <div class="thought-bubble">Red-team initial plan: challenge assumptions, test edge-case safety, and verify non-destructive bounds.</div>
+          </div>
+          <div class="thought-stage phase-3">
+            <div class="stage-tag">PHASE 3: SELF-CORRECTION</div>
+            <div class="thought-bubble">Prune speculative dead-ends; prove invariant correctness against active codebase.</div>
+          </div>
+          <div class="thought-stage phase-4">
+            <div class="stage-tag">PHASE 4: SYNTHESIS</div>
+            <div class="thought-bubble">Execute verified plan with continuous live monitoring.</div>
+          </div>
+        </div>
+
+        <!-- Model & Autonomy Settings -->
+        <div class="model-control-card">
+          <div class="control-row">
+            <label>Model</label>
+            <select id="model-select">
+              <option value="openai/gpt-oss-120b">GPT-OSS 120B (Default)</option>
+              <option value="anthropic/claude-3.7-sonnet">Claude 3.7 Sonnet (Hybrid)</option>
+              <option value="deepseek/deepseek-r1">DeepSeek R1 (Reasoning)</option>
+            </select>
+          </div>
+          <div class="control-row">
+            <label>Autonomy</label>
+            <select id="autonomy-select">
+              <option value="unbounded">⚡ Unbounded Infinite</option>
+              <option value="bounded">Bounded (15 Steps)</option>
+            </select>
+          </div>
+        </div>
+      </aside>
+    </div>
   </div>
 
   <script src="/app.js"></script>
