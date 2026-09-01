@@ -54,4 +54,21 @@ pub fn build(b: *std.Build) void {
 
     const check_step = b.step("check", "Build-check Ziggy");
     check_step.dependOn(&check_exe.step);
+
+    // Cross-Platform Windows Executable Step
+    const win_target = b.resolveTargetQuery(.{
+        .cpu_arch = .x86_64,
+        .os_tag = .windows,
+    });
+    const win_exe = b.addExecutable(.{
+        .name = "ziggy-windows-x86_64.exe",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = win_target,
+            .optimize = optimize,
+        }),
+    });
+    const win_install = b.addInstallArtifact(win_exe, .{});
+    const win_step = b.step("windows", "Build standalone Windows x86_64 binary");
+    win_step.dependOn(&win_install.step);
 }

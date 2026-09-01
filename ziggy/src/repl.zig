@@ -21,6 +21,9 @@ const agent_wizard = @import("agent_wizard.zig");
 const tools = @import("tools.zig");
 const interactive_tui = @import("interactive_tui.zig");
 const omnilattice = @import("omnilattice.zig");
+const mcp = @import("mcp.zig");
+const skills = @import("skills.zig");
+const plugins = @import("plugins.zig");
 
 pub const Repl = struct {
     allocator: std.mem.Allocator,
@@ -35,6 +38,9 @@ pub const Repl = struct {
     time_mach: timemachine.TimeMachine,
     cfg_mgr: config.ConfigManager,
     omni_bridge: omnilattice.OmniLatticeBridge,
+    mcp_mgr: mcp.McpManager,
+    skill_mgr: skills.SkillManager,
+    plugin_mgr: plugins.PluginManager,
     history: std.ArrayList([]const u8),
     active_model: []const u8 = "openai/gpt-oss-120b",
 
@@ -55,6 +61,9 @@ pub const Repl = struct {
             .time_mach = timemachine.TimeMachine.init(allocator, ".ziggy/snapshots"),
             .cfg_mgr = config.ConfigManager.init(allocator),
             .omni_bridge = omnilattice.OmniLatticeBridge.init(allocator, ".ziggy"),
+            .mcp_mgr = mcp.McpManager.init(allocator, ".ziggy"),
+            .skill_mgr = skills.SkillManager.init(allocator),
+            .plugin_mgr = plugins.PluginManager.init(allocator),
             .history = .empty,
             .active_model = "openai/gpt-oss-120b",
         };
@@ -62,6 +71,9 @@ pub const Repl = struct {
 
     pub fn deinit(self: *Repl) void {
         self.engine.deinit();
+        self.mcp_mgr.deinit();
+        self.skill_mgr.deinit();
+        self.plugin_mgr.deinit();
     }
 
     pub fn run(self: *Repl) !void {
@@ -201,6 +213,30 @@ pub const Repl = struct {
             return true;
         }
 
+        if (std.mem.eql(u8, cmd, "/mcp")) {
+            self.mcp_mgr.listMcpTools();
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/skills")) {
+            self.skill_mgr.listSkills();
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/skill")) {
+            if (arg1) |sk_name| {
+                _ = self.skill_mgr.activateSkill(sk_name);
+            } else {
+                self.skill_mgr.listSkills();
+            }
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/plugins") or std.mem.eql(u8, cmd, "/extensions")) {
+            self.plugin_mgr.listPlugins();
+            return true;
+        }
+
         if (std.mem.eql(u8, cmd, "/unbounded") or std.mem.eql(u8, cmd, "/infinite")) {
             self.cfg_mgr.config.unbounded_autonomy = !self.cfg_mgr.config.unbounded_autonomy;
             self.cfg_mgr.save();
@@ -221,11 +257,17 @@ pub const Repl = struct {
                 "    \x1b[38;2;255;107;53m/compact [focus]\x1b[0m          Targeted context compaction\n" ++
                 "    \x1b[38;2;255;107;53m/models\x1b[0m                   Preview available frontier & stealth models\n" ++
                 "    \x1b[38;2;255;107;53m/model <id>\x1b[0m               Activate specific model\n\n" ++
+                "  {s}🔌 PLUGINS, SKILLS & MCP PROTOCOL:{s}\n" ++
+                "    \x1b[38;2;255;107;53m/mcp\x1b[0m                      Model Context Protocol servers & tools\n" ++
+                "    \x1b[38;2;255;107;53m/skills\x1b[0m                   Specialized playbooks & domain skills\n" ++
+                "    \x1b[38;2;255;107;53m/skill <name>\x1b[0m             Activate a specific domain skill\n" ++
+                "    \x1b[38;2;255;107;53m/plugins\x1b[0m                  Manage dynamic plugins & extensions\n\n" ++
                 "  {s}🤖 CUSTOM AGENTS & PROFILES:{s}\n" ++
                 "    \x1b[38;2;255;107;53m/agents\x1b[0m                   List custom specialized agent profiles\n" ++
                 "    \x1b[38;2;255;107;53m/create-agent <name>\x1b[0m    Launch agent profile creation walkthrough\n\n",
                 .{
                     tui.TUI.C_CYAN, tui.TUI.C_RESET,
+                    tui.TUI.C_AQUA, tui.TUI.C_RESET,
                     tui.TUI.C_AQUA, tui.TUI.C_RESET,
                     tui.TUI.C_AQUA, tui.TUI.C_RESET,
                 },
