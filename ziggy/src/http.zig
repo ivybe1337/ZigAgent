@@ -109,7 +109,7 @@ pub const HttpClient = struct {
         var cmd_buf: [32768]u8 = undefined;
         const cmd = std.fmt.bufPrint(
             &cmd_buf,
-            "curl -s \"{s}\" -H \"Authorization: Bearer {s}\" -H \"Content-Type: application/json\" -d '{{\"model\": \"{s}\", \"messages\": [{{\"role\": \"system\", \"content\": \"{s}\"}}, {{\"role\": \"user\", \"content\": \"{s}\"}}]}}'",
+            "curl -s --http2 --compressed --tcp-fastopen -N \"{s}\" -H \"Authorization: Bearer {s}\" -H \"Content-Type: application/json\" -d '{{\"model\": \"{s}\", \"messages\": [{{\"role\": \"system\", \"content\": \"{s}\"}}, {{\"role\": \"user\", \"content\": \"{s}\"}}]}}'",
             .{ endpoint, api_key, model, SYSTEM_PROMPT_WITH_TOOLS, clean_prompt },
         ) catch return 0;
 
