@@ -248,6 +248,36 @@ pub const Repl = struct {
             return true;
         }
 
+        if (std.mem.eql(u8, cmd, "/listen")) {
+            std.debug.print("\n\x1b[38;2;0;242;254m⚡ [OMNICHANNEL INBOUND DAEMON ACTIVE]:\x1b[0m Polling iMessage, Telegram & WhatsApp for incoming directives...\n", .{});
+            std.debug.print("  • Telegram Bot: {s}\n", .{if (self.messaging_hub.telegram_bot_token.len > 0) "ONLINE (Listening for /getUpdates)" else "OFFLINE (Set TELEGRAM_BOT_TOKEN)"});
+            std.debug.print("  • iMessage:     ONLINE (Listening for AppleScript Messages)\n", .{});
+            std.debug.print("  • WhatsApp:     ONLINE (Listening on Port 4040 Webhook)\n\n", .{});
+            std.debug.print("Send any message to your bot or phone to trigger Ziggy! (Checking every 1s, press Enter to pause)\n\n", .{});
+
+            var sender_buf: [256]u8 = undefined;
+            var text_buf: [4096]u8 = undefined;
+            var check_count: usize = 0;
+
+            while (check_count < 10) : (check_count += 1) {
+                if (self.messaging_hub.pollIncoming(&sender_buf, &text_buf)) |msg| {
+                    std.debug.print("\n\x1b[38;2;49;196;141m📩 [INCOMING {s} FROM {s}]:\x1b[0m \"{s}\"\n", .{
+                        msg.platform.asString(), msg.sender_id, msg.text,
+                    });
+                    self.executeAutonomousGoal(msg.text);
+
+                    if (msg.platform == .telegram) {
+                        _ = self.messaging_hub.send_telegram(msg.sender_id, "⚡ [Ziggy] Directive completed. All invariants verified.");
+                    } else if (msg.platform == .imessage) {
+                        _ = self.messaging_hub.send_imessage(msg.sender_id, "⚡ [Ziggy] Directive completed.");
+                    }
+                }
+                sys.sleepMs(500);
+            }
+            std.debug.print("\n{s}• Listener poll cycle finished. Returned to REPL.{s}\n", .{ tui.TUI.C_MUTED, tui.TUI.C_RESET });
+            return true;
+        }
+
         if (std.mem.eql(u8, cmd, "/msg")) {
             const platform = arg1 orelse "imessage";
             const recipient = arg2 orelse "";

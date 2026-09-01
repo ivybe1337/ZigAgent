@@ -43,8 +43,8 @@
 @property (strong, nonatomic) NSTextField *maxStepsField;
 @property (strong, nonatomic) NSPopUpButton *verbosityPopup;
 @property (strong, nonatomic) NSButton *sandboxCheck;
-@property (strong, nonatomic) NSSecureTextField *groqKeyField;
-@property (strong, nonatomic) NSSecureTextField *openrouterKeyField;
+@property (strong, nonatomic) NSTextField *groqKeyField;
+@property (strong, nonatomic) NSTextField *openrouterKeyField;
 
 // Doctor UI
 @property (strong, nonatomic) NSTextView *doctorTextView;
@@ -301,9 +301,10 @@
     self.goalTextField.backgroundColor = [NSColor colorWithCalibratedRed:0.04 green:0.06 blue:0.09 alpha:0.95];
     self.goalTextField.bezeled = YES;
     self.goalTextField.bezelStyle = NSTextFieldRoundedBezel;
+    self.goalTextField.continuous = NO;
+    ((NSTextFieldCell *)self.goalTextField.cell).sendsActionOnEndEditing = NO;
     self.goalTextField.target = self;
     self.goalTextField.action = @selector(sendMessage:);
-    self.goalTextField.delegate = self;
     [chatBox.contentView addSubview:self.goalTextField];
 
     // Pinned Send Button
@@ -501,13 +502,13 @@
 
     y -= 32;
     [self addSettingLabel:@"Groq API Key" y:y container:box.contentView width:labelW];
-    self.groqKeyField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(labelW + 30, y - 4, fieldW, 24)];
+    self.groqKeyField = [[NSTextField alloc] initWithFrame:NSMakeRect(labelW + 30, y - 4, fieldW, 24)];
     self.groqKeyField.placeholderString = @"gsk_...";
     [box.contentView addSubview:self.groqKeyField];
 
     y -= 32;
     [self addSettingLabel:@"OpenRouter Key" y:y container:box.contentView width:labelW];
-    self.openrouterKeyField = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(labelW + 30, y - 4, fieldW, 24)];
+    self.openrouterKeyField = [[NSTextField alloc] initWithFrame:NSMakeRect(labelW + 30, y - 4, fieldW, 24)];
     self.openrouterKeyField.placeholderString = @"sk-or-v1-...";
     [box.contentView addSubview:self.openrouterKeyField];
 

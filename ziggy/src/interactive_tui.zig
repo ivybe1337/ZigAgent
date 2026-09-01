@@ -13,6 +13,7 @@ pub const AVAILABLE_COMMANDS = [_]SlashItem{
     .{ .cmd = "/deliberate", .desc = "Run 4-pass recursive metacognitive deliberation" },
     .{ .cmd = "/evolve", .desc = "Run autonomous self-analysis & code evolution" },
     .{ .cmd = "/msg", .desc = "Send message via iMessage, Telegram, or WhatsApp" },
+    .{ .cmd = "/listen", .desc = "Start live inbound messaging listener daemon" },
     .{ .cmd = "/bridges", .desc = "Inspect multi-platform messaging gateways" },
     .{ .cmd = "/remote", .desc = "Launch Manus-style cloud desktop gateway" },
     .{ .cmd = "/serve", .desc = "Start background HTTP & WebSocket remote server" },
