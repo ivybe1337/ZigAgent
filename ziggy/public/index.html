@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Ziggy</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="kicker">ZIGGY / ZIG</div>
+        <h1>Ziggy</h1>
+        <p>Native agent runtime with approvals and a minimal local UI.</p>
+      </div>
+
+      <section class="panel">
+        <label for="goal">Goal</label>
+        <textarea id="goal">inspect this project and suggest the safest first improvement</textarea>
+        <div class="actions">
+          <button id="run">Run Agent</button>
+          <button id="refresh" class="ghost">Refresh</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Config</h2>
+        <pre id="config">loading...</pre>
+      </section>
+    </aside>
+
+    <main class="main">
+      <section class="metrics">
+        <div class="metric"><span>Phase</span><strong id="phase">idle</strong></div>
+        <div class="metric"><span>Step</span><strong id="step">0</strong></div>
+        <div class="metric"><span>Confidence</span><strong id="confidence">0.00</strong></div>
+        <div class="metric"><span>Running</span><strong id="running">false</strong></div>
+      </section>
+
+      <section class="card hero">
+        <h2>Summary</h2>
+        <p id="summary">No summary yet.</p>
+        <pre id="final"></pre>
+      </section>
+
+      <section class="grid">
+        <section class="card">
+          <h2>Pending approvals</h2>
+          <div id="pending"></div>
+        </section>
+
+        <section class="card">
+          <h2>Events</h2>
+          <div id="events"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

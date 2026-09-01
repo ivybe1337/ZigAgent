@@ -1,0 +1,23 @@
+# Build Outputs & Caches
+.zig-cache/
+zig-cache/
+zig-out/
+.ziggy/
+.env
+.venv/
+.DS_Store
+*.o
+*.a
+*.dylib
+node_modules/
+dist/
+build/
+app/ZigAgent.app/Contents/MacOS/ZigAgent
+
+# Models & Large Binaries
+models/
+*.gguf
+*.onnx
+*.tar.gz
+*.zip
+*.iso

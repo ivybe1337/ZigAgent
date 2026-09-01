@@ -1,0 +1,10 @@
+.zig-cache
+zig-cache
+zig-out
+.ziggy
+.env
+.DS_Store
+node_modules
+models
+*.gguf
+*.onnx

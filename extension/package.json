@@ -1,0 +1,55 @@
+{
+  "name": "zigagent-ide",
+  "displayName": "ZigAgent Native IDE Extension",
+  "description": "Ultra-fast, 100% native autonomous AI agent suite with thermodynamic memory, speculative branching, and AST guards.",
+  "version": "0.1.0",
+  "publisher": "ivybe1337",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "zigagent.startREPL",
+        "title": "ZigAgent: Open Interactive Native REPL",
+        "category": "ZigAgent"
+      },
+      {
+        "command": "zigagent.startTUI",
+        "title": "ZigAgent: Open Live Telemetry HUD TUI",
+        "category": "ZigAgent"
+      },
+      {
+        "command": "zigagent.showMemory",
+        "title": "ZigAgent: Inspect Thermodynamic Memory & Merkle Forest",
+        "category": "ZigAgent"
+      },
+      {
+        "command": "zigagent.showLedger",
+        "title": "ZigAgent: Inspect Project Continuity Ledger",
+        "category": "ZigAgent"
+      },
+      {
+        "command": "zigagent.runDoctor",
+        "title": "ZigAgent: Run System & Toolchain Diagnostics",
+        "category": "ZigAgent"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "zigagent.startREPL",
+        "key": "cmd+shift+z",
+        "mac": "cmd+shift+z"
+      }
+    ]
+  }
+}
