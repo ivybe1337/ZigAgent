@@ -357,15 +357,29 @@
     title.bezeled = NO;
     title.drawsBackground = NO;
     title.editable = NO;
-    [box.contentView addSubview:title];
-
-    NSButton *newChatBtn = [[NSButton alloc] initWithFrame:NSMakeRect(frame.size.width - 150, frame.size.height - 48, 130, 30)];
+    NSButton *newChatBtn = [[NSButton alloc] initWithFrame:NSMakeRect(frame.size.width - 390, frame.size.height - 48, 120, 30)];
     newChatBtn.title = @"+ New Session";
     newChatBtn.bezelStyle = NSBezelStyleRounded;
     newChatBtn.contentTintColor = aquaColor;
     newChatBtn.target = self;
     newChatBtn.action = @selector(startNewSession:);
     [box.contentView addSubview:newChatBtn];
+
+    NSButton *deleteBtn = [[NSButton alloc] initWithFrame:NSMakeRect(frame.size.width - 260, frame.size.height - 48, 125, 30)];
+    deleteBtn.title = @"🗑️ Delete";
+    deleteBtn.bezelStyle = NSBezelStyleRounded;
+    deleteBtn.contentTintColor = [NSColor colorWithCalibratedRed:1.0 green:0.4 blue:0.3 alpha:1.0];
+    deleteBtn.target = self;
+    deleteBtn.action = @selector(deleteSelectedSession:);
+    [box.contentView addSubview:deleteBtn];
+
+    NSButton *clearBtn = [[NSButton alloc] initWithFrame:NSMakeRect(frame.size.width - 125, frame.size.height - 48, 105, 30)];
+    clearBtn.title = @"🧹 Clear All";
+    clearBtn.bezelStyle = NSBezelStyleRounded;
+    clearBtn.contentTintColor = [NSColor colorWithCalibratedRed:0.7 green:0.7 blue:0.8 alpha:1.0];
+    clearBtn.target = self;
+    clearBtn.action = @selector(clearAllSessions:);
+    [box.contentView addSubview:clearBtn];
 
     // Conversations Table
     NSRect tableRect = NSMakeRect(20, 20, frame.size.width - 40, frame.size.height - 80);
@@ -521,6 +535,52 @@
     saveBtn.target = self;
     saveBtn.action = @selector(saveSettings);
     [box.contentView addSubview:saveBtn];
+    [self loadSettings];
+}
+
+- (IBAction)deleteSelectedSession:(id)sender {
+    NSInteger row = self.conversationsTable.selectedRow;
+    if (row >= 0 && row < self.conversationsList.count) {
+        [self.conversationsList removeObjectAtIndex:row];
+        [self.conversationsTable reloadData];
+        [self appendSystemMessage:@"✔ Selected conversation session deleted.\n\n"];
+    } else if (self.conversationsList.count > 0) {
+        [self.conversationsList removeLastObject];
+        [self.conversationsTable reloadData];
+        [self appendSystemMessage:@"✔ Latest conversation session deleted.\n\n"];
+    }
+}
+
+- (IBAction)clearAllSessions:(id)sender {
+    [self.conversationsList removeAllObjects];
+    [self.conversationsTable reloadData];
+    [self appendSystemMessage:@"✔ All conversation sessions cleared from Sense Archives.\n\n"];
+}
+
+- (void)loadSettings {
+    NSString *home = NSHomeDirectory();
+    NSString *cfgPath = [NSString stringWithFormat:@"%@/.ziggy/config.json", home];
+    NSData *data = [NSData dataWithContentsOfFile:cfgPath];
+    if (data) {
+        NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        if (dict) {
+            NSString *verbosity = dict[@"verbosity"];
+            if ([verbosity isEqualToString:@"normal"]) [self.verbosityPopup selectItemAtIndex:1];
+            else if ([verbosity isEqualToString:@"full_transcript"]) [self.verbosityPopup selectItemAtIndex:2];
+            else [self.verbosityPopup selectItemAtIndex:0];
+
+            NSString *thinking = dict[@"thinking_effort"];
+            if ([thinking isEqualToString:@"low"]) [self.thinkingEffortPopup selectItemAtIndex:0];
+            else if ([thinking isEqualToString:@"medium"]) [self.thinkingEffortPopup selectItemAtIndex:1];
+            else if ([thinking isEqualToString:@"high"]) [self.thinkingEffortPopup selectItemAtIndex:2];
+            else [self.thinkingEffortPopup selectItemAtIndex:3];
+
+            NSNumber *unbounded = dict[@"unbounded_autonomy"];
+            if (unbounded) {
+                self.unboundedAutonomyCheck.state = [unbounded boolValue] ? NSControlStateValueOn : NSControlStateValueOff;
+            }
+        }
+    }
 }
 
 - (void)addSettingLabel:(NSString *)text y:(CGFloat)y container:(NSView *)container width:(CGFloat)width {
@@ -535,13 +595,49 @@
 }
 
 - (void)saveSettings {
+    NSString *home = NSHomeDirectory();
+    NSString *cfgPath = [NSString stringWithFormat:@"%@/.ziggy/config.json", home];
+    [[NSFileManager defaultManager] createDirectoryAtPath:[NSString stringWithFormat:@"%@/.ziggy", home] withIntermediateDirectories:YES attributes:nil error:nil];
+
+    NSString *verbosity = (self.verbosityPopup.indexOfSelectedItem == 0) ? @"quiet" : ((self.verbosityPopup.indexOfSelectedItem == 1) ? @"normal" : @"full_transcript");
+    NSString *thinking = (self.thinkingEffortPopup.indexOfSelectedItem == 0) ? @"low" : ((self.thinkingEffortPopup.indexOfSelectedItem == 1) ? @"medium" : ((self.thinkingEffortPopup.indexOfSelectedItem == 2) ? @"high" : @"max"));
+    NSString *strategy = (self.contextStrategyPopup.indexOfSelectedItem == 0) ? @"hierarchical_engrams" : ((self.contextStrategyPopup.indexOfSelectedItem == 1) ? @"rolling_window" : @"full_replay");
+    BOOL unbounded = (self.unboundedAutonomyCheck.state == NSControlStateValueOn);
+    BOOL preCompact = (self.preCompactDumpCheck.state == NSControlStateValueOn);
+
+    NSDictionary *cfgDict = @{
+        @"verbosity": verbosity,
+        @"thinking_effort": thinking,
+        @"context_strategy": strategy,
+        @"unbounded_autonomy": @(unbounded),
+        @"pre_compact_dump": @(preCompact),
+        @"stream_output": @(YES),
+        @"sandbox_enabled": @(YES),
+        @"max_steps": @(15),
+        @"auto_compact_threshold_pct": @(75),
+        @"active_agent_profile": @"default"
+    };
+
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:cfgDict options:NSJSONWritingPrettyPrinted error:nil];
+    if (jsonData) {
+        [jsonData writeToFile:cfgPath atomically:YES];
+    }
+
+    NSString *groqKey = [self.groqKeyField.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *orKey = [self.openrouterKeyField.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (groqKey.length > 0 || orKey.length > 0) {
+        NSString *keysPath = [NSString stringWithFormat:@"%@/.ziggy/keys.env", home];
+        NSString *keysContent = [NSString stringWithFormat:@"GROQ_API_KEY=%@\nOPENROUTER_API_KEY=%@\n", groqKey, orKey];
+        [keysContent writeToFile:keysPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    }
+
     // Update labels
     self.modelBadge.stringValue = [self.modelSelectPopup.selectedItem.title componentsSeparatedByString:@" "].firstObject;
     self.reasoningBadge.stringValue = [NSString stringWithFormat:@"Reasoning: %@ • %@",
         [self.thinkingEffortPopup.selectedItem.title componentsSeparatedByString:@" "].firstObject,
-        (self.unboundedAutonomyCheck.state == NSControlStateValueOn) ? @"⚡ UNBOUNDED" : @"Bounded"];
+        unbounded ? @"⚡ UNBOUNDED" : @"Bounded"];
 
-    [self appendSystemMessage:@"✔ Preferences successfully updated and synchronized to ~/.ziggy/config.json\n\n"];
+    [self appendSystemMessage:@"✔ Preferences successfully saved to ~/.ziggy/config.json and applied to runtime.\n\n"];
 }
 
 #pragma mark - Doctor & Toolchains Screen Setup
