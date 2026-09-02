@@ -618,10 +618,9 @@ pub const Repl = struct {
         }
 
         if (std.mem.eql(u8, cmd, "/models") or (std.mem.eql(u8, cmd, "/model") and arg1 == null)) {
-            var router = model_router.ModelRouter.init(self.allocator);
-            if (router.selectModelInteractively(self.active_model)) |new_m| {
+            if (models.ModelBrowser.runInteractivePicker(self.allocator, self.active_model)) |new_m| {
                 self.active_model = new_m;
-                std.debug.print("{s}✔ Activated Model: {s}{s}\n", .{ tui.TUI.C_AQUA, new_m, tui.TUI.C_RESET });
+                std.debug.print("\n{s}✔ Activated Model: {s}{s}\n", .{ tui.TUI.C_AQUA, new_m, tui.TUI.C_RESET });
             }
             return true;
         }
