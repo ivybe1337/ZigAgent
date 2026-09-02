@@ -45,7 +45,7 @@ pub const AVAILABLE_COMMANDS = [_]SlashItem{
 };
 
 pub const InteractiveTUI = struct {
-    /// Dedicated graphical chatbox reader
+    /// Safe, robust terminal input reader with ZERO password / raw mode interference
     pub fn readInputWithAutocomplete(
         allocator: std.mem.Allocator,
         prompt_prefix: []const u8,
@@ -72,7 +72,7 @@ pub const InteractiveTUI = struct {
         buf[total_read] = 0;
 
         const raw_slice = buf[0..total_read];
-        const trimmed = std.mem.trim(u8, raw_slice, "\r\n");
+        const trimmed = std.mem.trim(u8, raw_slice, " \t\r\n");
         if (trimmed.len > 0) {
             const dup = allocator.dupe(u8, trimmed) catch "";
             if (dup.len > 0) history.append(allocator, dup) catch {};
@@ -83,55 +83,41 @@ pub const InteractiveTUI = struct {
         return out_buf[0..out_len];
     }
 
-    /// Interactive TUI Settings View with Arrow Keys, j/k, and Spacebar Toggling
+    /// Robust, interactive Settings Menu without terminal termios locking
     pub fn runInteractiveSettings(cfg_mgr: *config.ConfigManager) void {
-        var term_raw: sys.Termios = undefined;
-        var term_orig: sys.Termios = undefined;
-        if (sys.Sys.tcgetattr(0, &term_orig) != 0) return;
-        term_raw = term_orig;
-        // Non-canonical, turn off echoing
-        term_raw.c_lflag &= ~@as(c_ulong, 0x00000002 | 0x00000008);
-        term_raw.c_cc[16] = 1; // VMIN = 1
-        term_raw.c_cc[17] = 0; // VTIME = 0
-        _ = sys.Sys.tcsetattr(0, 0, &term_raw);
-        defer _ = sys.Sys.tcsetattr(0, 0, &term_orig);
-
-        var selected: usize = 0;
-        const total_items: usize = 8;
-
         while (true) {
-            renderSettingsScreen(cfg_mgr, selected);
+            renderSettingsScreen(cfg_mgr);
 
-            var ch: [8]u8 = undefined;
-            const r = sys.Sys.read(0, @ptrCast(&ch), 8);
-            if (r <= 0) break;
+            const prompt_str = "\x1b[38;2;60;80;110m│ \x1b[1;38;2;0;242;254mSelect Option [1-8] or [ENTER/q to exit]\x1b[0m ❯ ";
+            _ = sys.Sys.write(1, prompt_str, prompt_str.len);
 
-            // Handle ESC alone or 'q'
-            if (r == 1 and (ch[0] == 'q' or ch[0] == 'Q' or ch[0] == 27 or ch[0] == 'x' or ch[0] == 'X')) {
+            var choice_buf: [64]u8 = undefined;
+            var choice_len: usize = 0;
+            while (choice_len < choice_buf.len - 1) {
+                var ch: [1]u8 = undefined;
+                const r = sys.Sys.read(0, &ch, 1);
+                if (r <= 0) break;
+                if (ch[0] == '\n' or ch[0] == '\r') break;
+                choice_buf[choice_len] = ch[0];
+                choice_len += 1;
+            }
+            choice_buf[choice_len] = 0;
+
+            const input = std.mem.trim(u8, choice_buf[0..choice_len], " \t\r\n");
+            if (input.len == 0 or std.mem.eql(u8, input, "q") or std.mem.eql(u8, input, "Q") or std.mem.eql(u8, input, "exit")) {
                 break;
             }
 
-            // Arrow Up (CSI [ A or SS3 O A or 'k')
-            if ((r >= 3 and ch[0] == 27 and (ch[1] == '[' or ch[1] == 'O') and ch[2] == 'A') or ch[0] == 'k' or ch[0] == 'K') {
-                if (selected > 0) selected -= 1 else selected = total_items - 1;
-                continue;
-            }
-
-            // Arrow Down (CSI [ B or SS3 O B or 'j')
-            if ((r >= 3 and ch[0] == 27 and (ch[1] == '[' or ch[1] == 'O') and ch[2] == 'B') or ch[0] == 'j' or ch[0] == 'J') {
-                if (selected < total_items - 1) selected += 1 else selected = 0;
-                continue;
-            }
-
-            // Space, Enter, or Right Arrow to Toggle
-            if (ch[0] == ' ' or ch[0] == '\n' or ch[0] == '\r' or (r >= 3 and ch[0] == 27 and ch[2] == 'C')) {
-                toggleSetting(cfg_mgr, selected);
-                continue;
+            if (input.len == 1) {
+                const opt = input[0];
+                if (opt >= '1' and opt <= '8') {
+                    const idx: usize = @intCast(opt - '1');
+                    toggleSetting(cfg_mgr, idx);
+                }
             }
         }
 
-        _ = sys.Sys.write(1, "\x1b[2J\x1b[H", 7);
-        std.debug.print("{s}✔ Configuration saved to {s}{s}\n\n", .{ tui.TUI.C_AQUA, cfg_mgr.config_path[0..cfg_mgr.config_path_len], tui.TUI.C_RESET });
+        std.debug.print("\n{s}✔ Configuration saved to {s}{s}\n\n", .{ tui.TUI.C_AQUA, cfg_mgr.config_path[0..cfg_mgr.config_path_len], tui.TUI.C_RESET });
     }
 
     fn toggleSetting(cfg: *config.ConfigManager, idx: usize) void {
@@ -176,29 +162,7 @@ pub const InteractiveTUI = struct {
         cfg.save();
     }
 
-    fn renderSettingsScreen(cfg_mgr: *config.ConfigManager, selected: usize) void {
-        var buf: [4096]u8 = undefined;
-        var cursor: usize = 0;
-
-        const hdr = std.fmt.bufPrint(
-            buf[cursor..],
-            \\{s}
-            \\{s}╭─────────────────────────────────────────────────────────────────────────────╮{s}
-            \\{s}│                    ⚡ ZIGAGENT INTERACTIVE SETTINGS PANEL                   │{s}
-            \\{s}├─────────────────────────────────────────────────────────────────────────────┤{s}
-            \\{s}│  [↑/↓] Navigate  •  [SPACE/ENTER] Toggle / Cycle  •  [q/ESC] Save & Exit     │{s}
-            \\{s}╰─────────────────────────────────────────────────────────────────────────────╯{s}
-            \\
-        , .{
-            "\x1b[2J\x1b[H",
-            tui.TUI.C_BORDER, tui.TUI.C_RESET,
-            tui.TUI.C_CYAN, tui.TUI.C_RESET,
-            tui.TUI.C_BORDER, tui.TUI.C_RESET,
-            tui.TUI.C_MUTED, tui.TUI.C_RESET,
-            tui.TUI.C_BORDER, tui.TUI.C_RESET,
-        }) catch return;
-        cursor += hdr.len;
-
+    fn renderSettingsScreen(cfg_mgr: *config.ConfigManager) void {
         var thresh_buf: [32]u8 = undefined;
         const thresh_str = std.fmt.bufPrint(&thresh_buf, "{d}% context limit", .{cfg_mgr.config.auto_compact_threshold_pct}) catch "80%";
 
@@ -213,29 +177,34 @@ pub const InteractiveTUI = struct {
             .{ .label = "8. Auto-Compact Threshold", .val = thresh_str },
         };
 
-        for (items, 0..) |item, idx| {
-            const is_sel = (idx == selected);
-            const prefix = if (is_sel) "  \x1b[48;2;25;40;60m\x1b[38;2;83;182;255m ▶ " else "     ";
-            const reset = "\x1b[0m";
-            const val_color = if (is_sel) "\x1b[1;38;2;49;196;141m" else "\x1b[38;2;240;246;252m";
+        std.debug.print(
+            \\
+            \\{s}╭─────────────────────────────────────────────────────────────────────────────╮{s}
+            \\{s}│                    ⚡ ZIGAGENT SETTINGS & PREFERENCES                        │{s}
+            \\{s}├─────────────────────────────────────────────────────────────────────────────┤{s}
+            \\{s}│  Type number [1-8] and press ENTER to toggle • Press ENTER/q to return      │{s}
+            \\{s}├─────────────────────────────────────────────────────────────────────────────┤{s}
+            \\
+        , .{
+            tui.TUI.C_BORDER, tui.TUI.C_RESET,
+            tui.TUI.C_CYAN, tui.TUI.C_RESET,
+            tui.TUI.C_BORDER, tui.TUI.C_RESET,
+            tui.TUI.C_MUTED, tui.TUI.C_RESET,
+            tui.TUI.C_BORDER, tui.TUI.C_RESET,
+        });
 
-            const row = std.fmt.bufPrint(
-                buf[cursor..],
-                "{s}{s:<28} : {s}{s:<38}{s}\n",
-                .{ prefix, item.label, val_color, item.val, reset },
-            ) catch break;
-            cursor += row.len;
+        for (items, 0..) |item, idx| {
+            _ = idx;
+            std.debug.print(
+                "{s}│{s}  \x1b[1;38;2;0;242;254m{s:<26}\x1b[0m : \x1b[1;38;2;49;196;141m{s:<40}\x1b[0m{s}│{s}\n",
+                .{ tui.TUI.C_BORDER, tui.TUI.C_RESET, item.label, item.val, tui.TUI.C_BORDER, tui.TUI.C_RESET },
+            );
         }
 
-        const footer = std.fmt.bufPrint(
-            buf[cursor..],
-            \\
-            \\{s}─────────────────────────────────────────────────────────────────────────────{s}
+        std.debug.print(
+            \\{s}╰─────────────────────────────────────────────────────────────────────────────╯{s}
             \\{s}  Config File: {s}{s}
             \\
-        , .{ tui.TUI.C_BORDER, tui.TUI.C_RESET, tui.TUI.C_MUTED, cfg_mgr.config_path[0..cfg_mgr.config_path_len], tui.TUI.C_RESET }) catch return;
-        cursor += footer.len;
-
-        _ = sys.Sys.write(1, @ptrCast(&buf), cursor);
+        , .{ tui.TUI.C_BORDER, tui.TUI.C_RESET, tui.TUI.C_MUTED, cfg_mgr.config_path[0..cfg_mgr.config_path_len], tui.TUI.C_RESET });
     }
 };
