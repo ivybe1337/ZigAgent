@@ -6,7 +6,7 @@ const tui = @import("tui.zig");
 pub const ModelSpec = struct {
     id: []const u8,
     name: []const u8,
-    provider: auth.ProviderType,
+    provider_label: []const u8,
     context_window_k: u32,
     supports_reasoning: bool,
     is_free: bool,
@@ -18,7 +18,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "openai/gpt-oss-120b",
         .name = "OpenAI GPT-OSS 120B",
-        .provider = .openrouter,
+        .provider_label = "OpenRouter",
         .context_window_k = 131,
         .supports_reasoning = true,
         .is_free = false,
@@ -27,7 +27,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "anthropic/claude-3.7-sonnet",
         .name = "Anthropic Claude 3.7 Sonnet",
-        .provider = .anthropic,
+        .provider_label = "Anthropic",
         .context_window_k = 200,
         .supports_reasoning = true,
         .is_free = false,
@@ -36,7 +36,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "anthropic/claude-3.5-sonnet",
         .name = "Anthropic Claude 3.5 Sonnet",
-        .provider = .anthropic,
+        .provider_label = "Anthropic",
         .context_window_k = 200,
         .supports_reasoning = false,
         .is_free = false,
@@ -45,7 +45,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "deepseek/deepseek-r1",
         .name = "DeepSeek R1 (Reasoning)",
-        .provider = .openrouter,
+        .provider_label = "DeepSeek",
         .context_window_k = 65,
         .supports_reasoning = true,
         .is_free = false,
@@ -54,7 +54,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "deepseek/deepseek-chat",
         .name = "DeepSeek V3 (671B MoE)",
-        .provider = .openrouter,
+        .provider_label = "DeepSeek",
         .context_window_k = 65,
         .supports_reasoning = false,
         .is_free = false,
@@ -63,7 +63,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "google/gemini-2.5-pro",
         .name = "Google Gemini 2.5 Pro",
-        .provider = .gemini,
+        .provider_label = "Google",
         .context_window_k = 1048,
         .supports_reasoning = true,
         .is_free = false,
@@ -72,7 +72,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "qwen/qwen3.8-27b",
         .name = "Qwen 3.8 27B Stealth",
-        .provider = .openrouter,
+        .provider_label = "Qwen",
         .context_window_k = 131,
         .supports_reasoning = true,
         .is_free = false,
@@ -81,7 +81,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "mistralai/codestral-2501",
         .name = "Mistral Codestral 2501",
-        .provider = .openrouter,
+        .provider_label = "Mistral",
         .context_window_k = 262,
         .supports_reasoning = false,
         .is_free = false,
@@ -90,7 +90,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "meta-llama/llama-3.3-70b-instruct",
         .name = "Meta Llama 3.3 70B Instruct",
-        .provider = .groq,
+        .provider_label = "Meta/Groq",
         .context_window_k = 131,
         .supports_reasoning = false,
         .is_free = false,
@@ -101,7 +101,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "nvidia/nemotron-3-ultra-550b-a55b:free",
         .name = "NVIDIA Nemotron 3 Ultra 550B [FREE]",
-        .provider = .openrouter,
+        .provider_label = "OpenRouter",
         .context_window_k = 1000,
         .supports_reasoning = true,
         .is_free = true,
@@ -110,7 +110,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "poolside/laguna-s-2.1:free",
         .name = "Poolside Laguna S 2.1 Coding [FREE]",
-        .provider = .openrouter,
+        .provider_label = "OpenRouter",
         .context_window_k = 262,
         .supports_reasoning = true,
         .is_free = true,
@@ -119,7 +119,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "thinkingmachines/inkling:free",
         .name = "Thinking Machines Inkling 975B [FREE]",
-        .provider = .openrouter,
+        .provider_label = "OpenRouter",
         .context_window_k = 1048,
         .supports_reasoning = true,
         .is_free = true,
@@ -128,7 +128,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "cohere/north-mini-code:free",
         .name = "Cohere North Mini Code [FREE]",
-        .provider = .openrouter,
+        .provider_label = "OpenRouter",
         .context_window_k = 256,
         .supports_reasoning = true,
         .is_free = true,
@@ -137,7 +137,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "z-ai/glm-5.2:free",
         .name = "Z.ai GLM 5.2 Reasoning [FREE]",
-        .provider = .openrouter,
+        .provider_label = "OpenRouter",
         .context_window_k = 256,
         .supports_reasoning = true,
         .is_free = true,
@@ -146,7 +146,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "minimax/minimax-m3:free",
         .name = "MiniMax M3 Multimodal [FREE]",
-        .provider = .openrouter,
+        .provider_label = "OpenRouter",
         .context_window_k = 1048,
         .supports_reasoning = true,
         .is_free = true,
@@ -155,7 +155,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "google/gemma-4-31b-it:free",
         .name = "Google Gemma 4 31B Instruct [FREE]",
-        .provider = .openrouter,
+        .provider_label = "OpenRouter",
         .context_window_k = 262,
         .supports_reasoning = false,
         .is_free = true,
@@ -164,7 +164,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "openrouter/free",
         .name = "OpenRouter Auto-Free Smart Gateway",
-        .provider = .openrouter,
+        .provider_label = "OpenRouter",
         .context_window_k = 200,
         .supports_reasoning = true,
         .is_free = true,
@@ -175,7 +175,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "groq/llama-3.3-70b-versatile",
         .name = "Groq Llama 3.3 70B (@300 tps)",
-        .provider = .groq,
+        .provider_label = "Groq",
         .context_window_k = 128,
         .supports_reasoning = false,
         .is_free = false,
@@ -184,7 +184,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "groq/deepseek-r1-distill-llama-70b",
         .name = "Groq DeepSeek R1 70B (@280 tps)",
-        .provider = .groq,
+        .provider_label = "Groq",
         .context_window_k = 128,
         .supports_reasoning = true,
         .is_free = false,
@@ -195,7 +195,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "ollama/qwen2.5-coder:32b",
         .name = "Ollama Qwen 2.5 Coder 32B (Local)",
-        .provider = .ollama,
+        .provider_label = "Ollama",
         .context_window_k = 32,
         .supports_reasoning = false,
         .is_free = true,
@@ -204,7 +204,7 @@ pub const ALL_MODELS = [_]ModelSpec{
     .{
         .id = "lmstudio/local-model",
         .name = "LM Studio Local Instance",
-        .provider = .lmstudio,
+        .provider_label = "LMStudio",
         .context_window_k = 32,
         .supports_reasoning = false,
         .is_free = true,
@@ -230,7 +230,8 @@ pub const ModelBrowser = struct {
         }
 
         var term_raw = term_orig;
-        term_raw.c_lflag &= ~@as(c_ulong, 0x00000002 | 0x00000008); // ~ICANON, ~ECHO
+        // Non-canonical only, KEEP ECHO to prevent macOS password manager trigger
+        term_raw.c_lflag &= ~@as(c_ulong, 0x00000002); // ~ICANON only
         term_raw.c_cc[16] = 1; // VMIN = 1
         term_raw.c_cc[17] = 0; // VTIME = 0
         _ = sys.Sys.tcsetattr(0, 0, &term_raw);
@@ -253,7 +254,7 @@ pub const ModelBrowser = struct {
             const r = sys.Sys.read(0, @ptrCast(&ch), 8);
             if (r <= 0) break;
 
-            // 'q', 'Q', or ESC
+            // 'q', 'Q', or ESC alone
             if (r == 1 and (ch[0] == 'q' or ch[0] == 'Q' or ch[0] == 27)) {
                 break;
             }
@@ -276,13 +277,13 @@ pub const ModelBrowser = struct {
                 continue;
             }
 
-            // Page UP / Home
+            // Page UP
             if (r >= 4 and ch[0] == 27 and ch[1] == '[' and ch[2] == '5' and ch[3] == '~') {
                 if (selected_idx > page_size) selected_idx -= page_size else selected_idx = 0;
                 continue;
             }
 
-            // Page DOWN / End
+            // Page DOWN
             if (r >= 4 and ch[0] == 27 and ch[1] == '[' and ch[2] == '6' and ch[3] == '~') {
                 if (selected_idx + page_size < ALL_MODELS.len) selected_idx += page_size else selected_idx = ALL_MODELS.len - 1;
                 continue;
@@ -299,38 +300,37 @@ pub const ModelBrowser = struct {
 
         const hdr = std.fmt.bufPrint(
             buf[cursor..],
-            \\{s}
-            \\{s}╭─────────────────────────────────────────────────────────────────────────────────────────────╮{s}
-            \\{s}│                     ⚡ OPENROUTER & FRONTIER MODEL SELECTION BROWSER                       │{s}
-            \\{s}├─────────────────────────────────────────────────────────────────────────────────────────────┤{s}
-            \\{s}│  [↑/↓/j/k] Scroll  •  [ENTER] Select & Activate  •  [ESC/q] Cancel                         │{s}
-            \\{s}├─────────────────────────────────────────────────────────────────────────────────────────────┤{s}
-            \\
-        , .{
-            "\x1b[2J\x1b[H",
-            tui.TUI.C_BORDER, tui.TUI.C_RESET,
-            tui.TUI.C_CYAN, tui.TUI.C_RESET,
-            tui.TUI.C_BORDER, tui.TUI.C_RESET,
-            tui.TUI.C_MUTED, tui.TUI.C_RESET,
-            tui.TUI.C_BORDER, tui.TUI.C_RESET,
-        }) catch return;
+            "\x1b[2J\x1b[H" ++
+            "{s}╭─────────────────────────────────────────────────────────────────────────────────────────────╮{s}\n" ++
+            "{s}│                     ⚡ OPENROUTER & FRONTIER MODEL SELECTION BROWSER                       │{s}\n" ++
+            "{s}├─────────────────────────────────────────────────────────────────────────────────────────────┤{s}\n" ++
+            "{s}│  [↑/↓/j/k] Scroll  •  [ENTER] Select & Activate  •  [ESC/q] Cancel                         │{s}\n" ++
+            "{s}├─────────────────────────────────────────────────────────────────────────────────────────────┤{s}\n",
+            .{
+                tui.TUI.C_BORDER, tui.TUI.C_RESET,
+                tui.TUI.C_CYAN, tui.TUI.C_RESET,
+                tui.TUI.C_BORDER, tui.TUI.C_RESET,
+                tui.TUI.C_MUTED, tui.TUI.C_RESET,
+                tui.TUI.C_BORDER, tui.TUI.C_RESET,
+            },
+        ) catch return;
         cursor += hdr.len;
 
         const end_idx = @min(offset + page_size, ALL_MODELS.len);
         for (ALL_MODELS[offset..end_idx], offset..) |m, idx| {
             const is_sel = (idx == selected);
             const prefix = if (is_sel) " ▶ " else "   ";
-            const row_bg = if (is_sel) "\x1b[48;2;25;40;65m\x1b[1;38;2;83;182;255m" else "\x1b[38;2;220;226;235m";
+            const row_style = if (is_sel) "\x1b[48;2;25;40;65m\x1b[1;38;2;83;182;255m" else "\x1b[38;2;220;226;235m";
             const badge = if (m.is_free) "\x1b[1;38;2;49;196;141m[FREE]\x1b[0m" else "\x1b[38;2;255;154;60m[PAID]\x1b[0m";
             const reason = if (m.supports_reasoning) "🧠 REASON" else "⚡ FAST  ";
 
             const row = std.fmt.bufPrint(
                 buf[cursor..],
-                "{s}│{s}{s}{s}{s:<40}\x1b[0m │ {s:<10} │ {s} │ {d:>4}k ctx │ {s} {s}│{s}\n",
+                "{s}│{s}{s}{s}{s:<38}\x1b[0m │ {s:<10} │ {s} │ {d:>4}k ctx │ {s} {s}│{s}\n",
                 .{
                     tui.TUI.C_BORDER, tui.TUI.C_RESET,
-                    row_bg, prefix, m.id,
-                    m.provider.asString(),
+                    row_style, prefix, m.id,
+                    m.provider_label,
                     badge,
                     m.context_window_k,
                     reason,
@@ -356,19 +356,24 @@ pub const ModelBrowser = struct {
         const sel_m = ALL_MODELS[selected];
         const footer = std.fmt.bufPrint(
             buf[cursor..],
-            \\{s}├─────────────────────────────────────────────────────────────────────────────────────────────┤{s}
-            \\{s}│  MODEL DETAILS [{d}/{d}]:                                                                     │{s}
-            \\{s}│  \x1b[1;38;2;0;242;254m{s:<42}\x1b[0;38;2;139;157;175m Provider: \x1b[1;38;2;240;246;252m{s:<16}\x1b[0;38;2;139;157;175m Context: \x1b[1;38;2;49;196;141m{d}k tokens\x1b[0m{s}│{s}
-            \\{s}│  \x1b[38;2;200;210;225m{s:<89}\x1b[0m{s}│{s}
-            \\{s}╰─────────────────────────────────────────────────────────────────────────────────────────────╯{s}
-            \\
-        , .{
-            tui.TUI.C_BORDER, tui.TUI.C_RESET,
-            tui.TUI.C_MUTED, selected + 1, ALL_MODELS.len, tui.TUI.C_RESET,
-            tui.TUI.C_BORDER, sel_m.name, sel_m.provider.asString(), sel_m.context_window_k, tui.TUI.C_BORDER, tui.TUI.C_RESET,
-            tui.TUI.C_BORDER, sel_m.description, tui.TUI.C_BORDER, tui.TUI.C_RESET,
-            tui.TUI.C_BORDER, tui.TUI.C_RESET,
-        }) catch return;
+            "{s}├─────────────────────────────────────────────────────────────────────────────────────────────┤{s}\n" ++
+            "{s}│  MODEL DETAILS [{d}/{d}]:{s}\n" ++
+            "{s}│  {s}{s:<38}{s} Provider: {s}{s:<12}{s} Context: {s}{d}k tokens{s}\n" ++
+            "{s}│  {s}{s:<89}{s}│{s}\n" ++
+            "{s}╰─────────────────────────────────────────────────────────────────────────────────────────────╯{s}\n",
+            .{
+                tui.TUI.C_BORDER, tui.TUI.C_RESET,
+                tui.TUI.C_MUTED, selected + 1, ALL_MODELS.len, tui.TUI.C_RESET,
+                tui.TUI.C_BORDER,
+                tui.TUI.C_CYAN, sel_m.name, tui.TUI.C_MUTED,
+                tui.TUI.C_WHITE, sel_m.provider_label, tui.TUI.C_MUTED,
+                tui.TUI.C_AQUA, sel_m.context_window_k, tui.TUI.C_RESET,
+                tui.TUI.C_BORDER,
+                tui.TUI.C_WHITE, sel_m.description,
+                tui.TUI.C_BORDER, tui.TUI.C_RESET,
+                tui.TUI.C_BORDER, tui.TUI.C_RESET,
+            },
+        ) catch return;
         cursor += footer.len;
 
         _ = sys.Sys.write(1, @ptrCast(&buf), cursor);
