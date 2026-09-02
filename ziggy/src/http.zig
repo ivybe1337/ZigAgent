@@ -35,17 +35,23 @@ pub const HttpClient = struct {
         const groq_key = vault.getKey(.groq);
         const or_key = vault.getKey(.openrouter);
 
+        // 1. If Groq Key is available, test with Groq first (ultra-fast 300+ tps LPU)
         if (groq_key.len > 0) {
             const res = queryGroq(allocator, groq_key, model, prompt, out_buf);
             if (res > 0) return res;
         }
 
+        // 2. OpenRouter Universal Routing (Supports 300+ models)
         if (or_key.len > 0) {
             const res = queryOpenRouter(allocator, or_key, model, prompt, out_buf);
             if (res > 0) return res;
         }
 
-        const fallback = "No active API keys found or inference failed. Run /keys or /login <provider> <key>.";
+        // 3. Fallback to Local Ollama
+        const local_res = queryLocalOllama(allocator, model, prompt, out_buf);
+        if (local_res > 0) return local_res;
+
+        const fallback = "No active API keys found or neural inference failed. Run /keys to check your credentials.";
         const len = @min(fallback.len, out_buf.len);
         @memcpy(out_buf[0..len], fallback[0..len]);
         return len;
@@ -58,9 +64,7 @@ pub const HttpClient = struct {
         prompt: []const u8,
         out_buf: []u8,
     ) usize {
-        const actual_model = if (std.mem.indexOf(u8, model, "120b") != null)
-            "openai/gpt-oss-120b"
-        else if (std.mem.indexOf(u8, model, "qwen") != null)
+        const actual_model = if (std.mem.indexOf(u8, model, "qwen") != null)
             "qwen/qwen3.8-27b"
         else
             "openai/gpt-oss-120b";
@@ -76,6 +80,20 @@ pub const HttpClient = struct {
         out_buf: []u8,
     ) usize {
         return executeCurlInference(allocator, "https://openrouter.ai/api/v1/chat/completions", api_key, model, prompt, out_buf);
+    }
+
+    fn queryLocalOllama(
+        allocator: std.mem.Allocator,
+        model: []const u8,
+        prompt: []const u8,
+        out_buf: []u8,
+    ) usize {
+        const actual_model = if (std.mem.indexOf(u8, model, "/") != null)
+            model[std.mem.indexOf(u8, model, "/").? + 1 ..]
+        else
+            "qwen2.5-coder:32b";
+
+        return executeCurlInference(allocator, "http://localhost:11434/v1/chat/completions", "ollama", actual_model, prompt, out_buf);
     }
 
     fn executeCurlInference(
@@ -109,7 +127,7 @@ pub const HttpClient = struct {
         var cmd_buf: [32768]u8 = undefined;
         const cmd = std.fmt.bufPrint(
             &cmd_buf,
-            "curl -s --http2 --compressed --tcp-fastopen -N \"{s}\" -H \"Authorization: Bearer {s}\" -H \"Content-Type: application/json\" -d '{{\"model\": \"{s}\", \"messages\": [{{\"role\": \"system\", \"content\": \"{s}\"}}, {{\"role\": \"user\", \"content\": \"{s}\"}}]}}'",
+            "curl -s --compressed -N \"{s}\" -H \"Authorization: Bearer {s}\" -H \"Content-Type: application/json\" -d '{{\"model\": \"{s}\", \"messages\": [{{\"role\": \"system\", \"content\": \"{s}\"}}, {{\"role\": \"user\", \"content\": \"{s}\"}}]}}'",
             .{ endpoint, api_key, model, SYSTEM_PROMPT_WITH_TOOLS, clean_prompt },
         ) catch return 0;
 
@@ -129,6 +147,58 @@ pub const HttpClient = struct {
         resp_raw[total_read] = 0;
 
         const raw_slice = resp_raw[0..total_read];
+        var out_cursor: usize = 0;
+
+        // Extract reasoning if present
+        if (std.mem.indexOf(u8, raw_slice, "\"reasoning\":\"")) |r_idx| {
+            const r_start = r_idx + 13;
+            var r_end = r_start;
+            var r_escaped = false;
+            while (r_end < raw_slice.len) {
+                const c = raw_slice[r_end];
+                if (c == '\\') {
+                    r_escaped = !r_escaped;
+                } else if (c == '"' and !r_escaped) {
+                    break;
+                } else {
+                    r_escaped = false;
+                }
+                r_end += 1;
+            }
+
+            const raw_reasoning = raw_slice[r_start..r_end];
+            if (raw_reasoning.len > 0) {
+                const prefix = "<think>\n";
+                @memcpy(out_buf[out_cursor .. out_cursor + prefix.len], prefix);
+                out_cursor += prefix.len;
+
+                var i: usize = 0;
+                while (i < raw_reasoning.len and out_cursor < out_buf.len - 12) {
+                    if (raw_reasoning[i] == '\\' and i + 1 < raw_reasoning.len) {
+                        if (raw_reasoning[i + 1] == 'n') {
+                            out_buf[out_cursor] = '\n';
+                            out_cursor += 1;
+                            i += 2;
+                            continue;
+                        } else if (raw_reasoning[i + 1] == '"') {
+                            out_buf[out_cursor] = '"';
+                            out_cursor += 1;
+                            i += 2;
+                            continue;
+                        }
+                    }
+                    out_buf[out_cursor] = raw_reasoning[i];
+                    out_cursor += 1;
+                    i += 1;
+                }
+
+                const suffix = "\n</think>\n\n";
+                @memcpy(out_buf[out_cursor .. out_cursor + suffix.len], suffix);
+                out_cursor += suffix.len;
+            }
+        }
+
+        // Extract content
         if (std.mem.indexOf(u8, raw_slice, "\"content\":\"")) |start_idx| {
             const content_start = start_idx + 11;
             var content_end = content_start;
@@ -146,7 +216,6 @@ pub const HttpClient = struct {
             }
 
             const raw_content = raw_slice[content_start..content_end];
-            var out_cursor: usize = 0;
             var i: usize = 0;
             while (i < raw_content.len and out_cursor < out_buf.len - 1) {
                 if (raw_content[i] == '\\' and i + 1 < raw_content.len) {
@@ -189,6 +258,6 @@ pub const HttpClient = struct {
             return out_cursor;
         }
 
-        return 0;
+        return out_cursor;
     }
 };

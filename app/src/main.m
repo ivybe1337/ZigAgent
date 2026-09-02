@@ -1,592 +1,792 @@
 #import <Cocoa/Cocoa.h>
+#import <WebKit/WebKit.h>
 
-@interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, NSTextFieldDelegate, NSTableViewDelegate, NSTableViewDataSource>
+@interface ZigAgentApp : NSObject <NSApplicationDelegate, NSTableViewDelegate, NSTableViewDataSource, WKNavigationDelegate, NSTextFieldDelegate>
 
-@property (strong, nonatomic) NSWindow *window;
-@property (strong, nonatomic) NSVisualEffectView *vibrancyView;
+// Main Window & Master Layout
+@property (strong) NSWindow *window;
+@property (strong) NSVisualEffectView *rootVisualEffect;
+@property (strong) NSSplitView *masterSplitView;
 
-// Navigation
-@property (strong, nonatomic) NSSegmentedControl *navControl;
-@property (strong, nonatomic) NSView *chatContainerView;
-@property (strong, nonatomic) NSView *conversationsContainerView;
-@property (strong, nonatomic) NSView *settingsContainerView;
-@property (strong, nonatomic) NSView *doctorContainerView;
+// Left Collapsible Sidebar: Sessions Drawer
+@property (strong) NSView *sidebarView;
+@property (strong) NSTableView *sessionsTableView;
+@property (strong) NSMutableArray<NSDictionary *> *sessionsList;
+@property (assign) BOOL isSidebarVisible;
 
-// Sidebar Badges
-@property (strong, nonatomic) NSTextField *modelBadge;
-@property (strong, nonatomic) NSTextField *reasoningBadge;
-@property (strong, nonatomic) NSTextField *autonomyBadge;
-@property (strong, nonatomic) NSTextField *contextBarLabel;
-@property (strong, nonatomic) NSProgressIndicator *contextProgressBar;
-@property (strong, nonatomic) NSTextField *workspaceLabel;
+// Center Panel: Chat & Action Stream
+@property (strong) NSView *chatCenterView;
+@property (strong) NSTextView *chatLogTextView;
+@property (strong) NSScrollView *chatLogScrollView;
+@property (strong) NSTextField *chatInputField;
+@property (strong) NSButton *sendActionButton;
+@property (strong) NSButton *interruptActionButton;
+@property (strong) NSTextField *topStatusBadge;
 
-// Chat UI
-@property (strong, nonatomic) NSTextField *statusHeader;
-@property (strong, nonatomic) NSTextView *chatTextView;
-@property (strong, nonatomic) NSScrollView *chatScrollView;
-@property (strong, nonatomic) NSTextField *goalTextField;
-@property (strong, nonatomic) NSButton *sendButton;
-@property (strong, nonatomic) NSButton *interruptButton;
+// Right Multi-Dock Panel: Browser / Preview / Terminal / Settings
+@property (strong) NSView *rightDockView;
+@property (strong) NSSegmentedControl *dockTabSelector;
+@property (strong) NSView *browserContainer;
+@property (strong) WKWebView *builtInWebView;
+@property (strong) NSTextField *browserUrlField;
 
-// Conversations UI
-@property (strong, nonatomic) NSTableView *conversationsTable;
-@property (strong, nonatomic) NSMutableArray<NSDictionary *> *conversationsList;
+@property (strong) NSView *previewContainer;
+@property (strong) NSTextView *codeEditorTextView;
+@property (strong) WKWebView *markdownRenderWebView;
+@property (strong) NSSegmentedControl *previewModeToggle;
+@property (strong) NSTextField *currentPreviewFilePathField;
+@property (strong) NSString *currentLoadedFilePath;
 
-// Settings UI
-@property (strong, nonatomic) NSPopUpButton *modelSelectPopup;
-@property (strong, nonatomic) NSPopUpButton *thinkingEffortPopup;
-@property (strong, nonatomic) NSPopUpButton *contextStrategyPopup;
-@property (strong, nonatomic) NSPopUpButton *autoCompactPopup;
-@property (strong, nonatomic) NSButton *preCompactDumpCheck;
-@property (strong, nonatomic) NSPopUpButton *toolOutputLimitPopup;
-@property (strong, nonatomic) NSButton *unboundedAutonomyCheck;
-@property (strong, nonatomic) NSTextField *maxStepsField;
-@property (strong, nonatomic) NSPopUpButton *verbosityPopup;
-@property (strong, nonatomic) NSButton *sandboxCheck;
-@property (strong, nonatomic) NSTextField *groqKeyField;
-@property (strong, nonatomic) NSTextField *openrouterKeyField;
+@property (strong) NSView *terminalContainer;
+@property (strong) NSTextView *terminalOutputTextView;
+@property (strong) NSTextField *terminalInputField;
 
-// Doctor UI
-@property (strong, nonatomic) NSTextView *doctorTextView;
+@property (strong) NSView *settingsContainer;
+@property (strong) NSPopUpButton *modelPopup;
+@property (strong) NSPopUpButton *reasoningPopup;
+@property (strong) NSButton *unboundedCheck;
+@property (strong) NSButton *streamingCheck;
+@property (strong) NSTextField *groqKeyInput;
+@property (strong) NSTextField *openrouterKeyInput;
 
-// Active Process
-@property (strong, nonatomic) NSTask *activeTask;
+@property (strong) NSTask *currentAgentTask;
+@property (strong) NSString *activeModelName;
 
 @end
 
-@implementation AppDelegate
+@implementation ZigAgentApp
 
-- (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
+- (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+
+    self.activeModelName = @"openai/gpt-oss-120b";
+    self.isSidebarVisible = YES;
+
+    // Window Setup: Ultra-crisp modern geometry
     NSRect screenRect = [[NSScreen mainScreen] visibleFrame];
-    CGFloat width = 1100;
-    CGFloat height = 750;
-    NSRect frame = NSMakeRect((screenRect.size.width - width) / 2, (screenRect.size.height - height) / 2, width, height);
+    CGFloat winW = @min(1380.0, screenRect.size.width - 60.0);
+    CGFloat winH = @min(880.0, screenRect.size.height - 60.0);
+    NSRect winRect = NSMakeRect((screenRect.size.width - winW) / 2.0, (screenRect.size.height - winH) / 2.0, winW, winH);
 
-    NSUInteger style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable | NSWindowStyleMaskFullSizeContentView;
-
-    self.window = [[NSWindow alloc] initWithContentRect:frame
-                                              styleMask:style
+    self.window = [[NSWindow alloc] initWithContentRect:winRect
+                                              styleMask:(NSWindowStyleMaskTitled |
+                                                         NSWindowStyleMaskClosable |
+                                                         NSWindowStyleMaskMiniaturizable |
+                                                         NSWindowStyleMaskResizable |
+                                                         NSWindowStyleMaskFullSizeContentView)
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
-    [self.window setTitle:@"⚡ ZigAgent // Conversational Intelligence"];
-    [self.window setTitlebarAppearsTransparent:YES];
-    [self.window setTitleVisibility:NSWindowTitleHidden];
-    self.window.backgroundColor = [NSColor colorWithCalibratedRed:0.04 green:0.06 blue:0.08 alpha:1.0];
-    self.window.delegate = self;
 
-    // Vibrancy Background
-    self.vibrancyView = [[NSVisualEffectView alloc] initWithFrame:self.window.contentView.bounds];
-    self.vibrancyView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    self.vibrancyView.material = NSVisualEffectMaterialHUDWindow;
-    self.vibrancyView.blendingMode = NSVisualEffectBlendingModeBehindWindow;
-    self.vibrancyView.state = NSVisualEffectStateActive;
-    [self.window.contentView addSubview:self.vibrancyView];
+    self.window.title = @"ZigAgent // Autonomous Cognitive Studio";
+    self.window.titlebarAppearsTransparent = YES;
+    self.window.titleVisibility = NSWindowTitleHidden;
+    self.window.backgroundColor = [NSColor colorWithCalibratedRed:0.04 green:0.05 blue:0.07 alpha:1.0];
+    self.window.minSize = NSMakeSize(960, 600);
 
-    // Colors
-    NSColor *aquaColor = [NSColor colorWithCalibratedRed:0.19 green:0.77 blue:0.55 alpha:1.0];
-    NSColor *panelBg = [NSColor colorWithCalibratedRed:0.07 green:0.10 blue:0.13 alpha:0.85];
-    NSColor *borderColor = [NSColor colorWithCalibratedRed:0.16 green:0.22 blue:0.29 alpha:0.9];
+    // Root Slate Glass Vibrancy
+    self.rootVisualEffect = [[NSVisualEffectView alloc] initWithFrame:self.window.contentView.bounds];
+    self.rootVisualEffect.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    self.rootVisualEffect.material = NSVisualEffectMaterialUnderWindowBackground;
+    self.rootVisualEffect.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+    self.rootVisualEffect.state = NSVisualEffectStateActive;
+    [self.window.contentView addSubview:self.rootVisualEffect];
 
-    // 1. Sidebar (250px)
-    NSRect sidebarRect = NSMakeRect(16, 16, 240, height - 32);
-    NSBox *sidebarBox = [[NSBox alloc] initWithFrame:sidebarRect];
-    sidebarBox.autoresizingMask = NSViewHeightSizable | NSViewMaxXMargin;
-    sidebarBox.boxType = NSBoxCustom;
-    sidebarBox.fillColor = panelBg;
-    sidebarBox.borderColor = borderColor;
-    sidebarBox.borderWidth = 1.0;
-    sidebarBox.cornerRadius = 14.0;
-    [self.vibrancyView addSubview:sidebarBox];
+    [self setupTopToolbar];
+    [self setupMasterSplitView];
+    [self setupSidebar];
+    [self setupChatCenter];
+    [self setupRightMultiDock];
 
-    // Sidebar: Logo & Title
-    NSTextField *brand = [[NSTextField alloc] initWithFrame:NSMakeRect(14, sidebarRect.size.height - 46, 210, 30)];
-    brand.stringValue = @"⚡ ZIGAGENT";
-    brand.font = [NSFont boldSystemFontOfSize:19];
-    brand.textColor = aquaColor;
-    brand.bezeled = NO;
-    brand.drawsBackground = NO;
-    brand.editable = NO;
-    [sidebarBox.contentView addSubview:brand];
-
-    // Sidebar: Navigation Segmented Control
-    self.navControl = [NSSegmentedControl segmentedControlWithLabels:@[@"💬 Chat", @"🗂 Chats", @"⚙ Config", @"🩺 Doctor"]
-                                                        trackingMode:NSSegmentSwitchTrackingSelectOne
-                                                              target:self
-                                                              action:@selector(navigationChanged:)];
-    self.navControl.frame = NSMakeRect(12, sidebarRect.size.height - 84, 216, 28);
-    self.navControl.selectedSegment = 0;
-    [sidebarBox.contentView addSubview:self.navControl];
-
-    // Sidebar: Live Telemetry & Status HUD
-    CGFloat hudY = sidebarRect.size.height - 130;
-
-    NSTextField *wsHeader = [[NSTextField alloc] initWithFrame:NSMakeRect(14, hudY, 210, 16)];
-    wsHeader.stringValue = @"ACTIVE WORKSPACE";
-    wsHeader.font = [NSFont boldSystemFontOfSize:10];
-    wsHeader.textColor = [NSColor colorWithCalibratedWhite:0.6 alpha:1.0];
-    wsHeader.bezeled = NO;
-    wsHeader.drawsBackground = NO;
-    wsHeader.editable = NO;
-    [sidebarBox.contentView addSubview:wsHeader];
-
-    self.workspaceLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, hudY - 20, 210, 18)];
-    self.workspaceLabel.stringValue = [self currentWorkspaceDisplay];
-    self.workspaceLabel.font = [NSFont fontWithName:@"Menlo" size:11] ?: [NSFont systemFontOfSize:11];
-    self.workspaceLabel.textColor = [NSColor whiteColor];
-    self.workspaceLabel.bezeled = NO;
-    self.workspaceLabel.drawsBackground = NO;
-    self.workspaceLabel.editable = NO;
-    [sidebarBox.contentView addSubview:self.workspaceLabel];
-
-    // Model & Reasoning
-    NSTextField *modelHeader = [[NSTextField alloc] initWithFrame:NSMakeRect(14, hudY - 50, 210, 16)];
-    modelHeader.stringValue = @"MODEL & REASONING";
-    modelHeader.font = [NSFont boldSystemFontOfSize:10];
-    modelHeader.textColor = [NSColor colorWithCalibratedWhite:0.6 alpha:1.0];
-    modelHeader.bezeled = NO;
-    modelHeader.drawsBackground = NO;
-    modelHeader.editable = NO;
-    [sidebarBox.contentView addSubview:modelHeader];
-
-    self.modelBadge = [[NSTextField alloc] initWithFrame:NSMakeRect(14, hudY - 70, 210, 18)];
-    self.modelBadge.stringValue = @"openai/gpt-oss-120b";
-    self.modelBadge.font = [NSFont boldSystemFontOfSize:11];
-    self.modelBadge.textColor = [NSColor colorWithCalibratedRed:1.00 green:0.42 blue:0.21 alpha:1.0];
-    self.modelBadge.bezeled = NO;
-    self.modelBadge.drawsBackground = NO;
-    self.modelBadge.editable = NO;
-    [sidebarBox.contentView addSubview:self.modelBadge];
-
-    self.reasoningBadge = [[NSTextField alloc] initWithFrame:NSMakeRect(14, hudY - 90, 210, 18)];
-    self.reasoningBadge.stringValue = @"Reasoning: max • ⚡ UNBOUNDED";
-    self.reasoningBadge.font = [NSFont systemFontOfSize:11];
-    self.reasoningBadge.textColor = aquaColor;
-    self.reasoningBadge.bezeled = NO;
-    self.reasoningBadge.drawsBackground = NO;
-    self.reasoningBadge.editable = NO;
-    [sidebarBox.contentView addSubview:self.reasoningBadge];
-
-    // Context Window Fill Bar
-    NSTextField *ctxHeader = [[NSTextField alloc] initWithFrame:NSMakeRect(14, hudY - 124, 210, 16)];
-    ctxHeader.stringValue = @"CONTEXT WINDOW UTILIZATION";
-    ctxHeader.font = [NSFont boldSystemFontOfSize:10];
-    ctxHeader.textColor = [NSColor colorWithCalibratedWhite:0.6 alpha:1.0];
-    ctxHeader.bezeled = NO;
-    ctxHeader.drawsBackground = NO;
-    ctxHeader.editable = NO;
-    [sidebarBox.contentView addSubview:ctxHeader];
-
-    self.contextProgressBar = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(14, hudY - 146, 210, 12)];
-    self.contextProgressBar.indeterminate = NO;
-    self.contextProgressBar.minValue = 0.0;
-    self.contextProgressBar.maxValue = 100.0;
-    self.contextProgressBar.doubleValue = 18.0;
-    [sidebarBox.contentView addSubview:self.contextProgressBar];
-
-    self.contextBarLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(14, hudY - 168, 210, 16)];
-    self.contextBarLabel.stringValue = @"18% (23.4k / 128k tokens)";
-    self.contextBarLabel.font = [NSFont fontWithName:@"Menlo" size:10] ?: [NSFont systemFontOfSize:10];
-    self.contextBarLabel.textColor = [NSColor colorWithCalibratedWhite:0.75 alpha:1.0];
-    self.contextBarLabel.bezeled = NO;
-    self.contextBarLabel.drawsBackground = NO;
-    self.contextBarLabel.editable = NO;
-    [sidebarBox.contentView addSubview:self.contextBarLabel];
-
-    // Sidebar Telemetry Info
-    NSTextField *sideTelemetry = [[NSTextField alloc] initWithFrame:NSMakeRect(14, 20, 210, hudY - 194)];
-    sideTelemetry.stringValue = @"OMNILATTICE MESH\n• Forest Sync: Merkle SHA-256\n• Continuity Ledger: Armed\n• Mailbox: 0 Unread\n\nINVARIANT GATES\n✔ Syntax Guard: Passed\n✔ Delimiter Check: Clean\n✔ State Hash: Content-Addressed";
-    sideTelemetry.font = [NSFont fontWithName:@"Menlo" size:10] ?: [NSFont systemFontOfSize:10];
-    sideTelemetry.textColor = [NSColor colorWithCalibratedWhite:0.7 alpha:1.0];
-    sideTelemetry.bezeled = NO;
-    sideTelemetry.drawsBackground = NO;
-    sideTelemetry.editable = NO;
-    [sidebarBox.contentView addSubview:sideTelemetry];
-
-    // 2. Right Main View Container
-    CGFloat mainX = 268;
-    CGFloat mainWidth = width - mainX - 16;
-    NSRect mainRect = NSMakeRect(mainX, 16, mainWidth, height - 32);
-
-    [self setupChatView:mainRect panelBg:panelBg borderColor:borderColor aquaColor:aquaColor];
-    [self setupConversationsView:mainRect panelBg:panelBg borderColor:borderColor aquaColor:aquaColor];
-    [self setupSettingsView:mainRect panelBg:panelBg borderColor:borderColor aquaColor:aquaColor];
-    [self setupDoctorView:mainRect panelBg:panelBg borderColor:borderColor aquaColor:aquaColor];
-
-    [self.conversationsContainerView setHidden:YES];
-    [self.settingsContainerView setHidden:YES];
-    [self.doctorContainerView setHidden:YES];
+    [self loadSettingsFromDisk];
+    [self loadInitialWorkspacePreview];
 
     [self.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
-    [self.window makeFirstResponder:self.goalTextField];
+    [self.window makeFirstResponder:self.chatInputField];
 }
 
-- (NSString *)currentWorkspaceDisplay {
-    NSString *pwd = [[[NSProcessInfo processInfo] environment] objectForKey:@"PWD"] ?: [[NSFileManager defaultManager] currentDirectoryPath];
-    NSString *home = NSHomeDirectory();
-    if ([pwd hasPrefix:home]) {
-        return [NSString stringWithFormat:@"~%@", [pwd substringFromIndex:home.length]];
+#pragma mark - Theme & Styling Helpers
+
+- (NSColor *)slateBackground {
+    return [NSColor colorWithCalibratedRed:0.04 green:0.05 blue:0.07 alpha:0.96];
+}
+
+- (NSColor *)slateCardBg {
+    return [NSColor colorWithCalibratedRed:0.07 green:0.09 blue:0.12 alpha:0.92];
+}
+
+- (NSColor *)slateBorderColor {
+    return [NSColor colorWithCalibratedRed:0.15 green:0.18 blue:0.24 alpha:0.8];
+}
+
+- (NSColor *)bloodstoneOrange {
+    return [NSColor colorWithCalibratedRed:1.00 green:0.42 blue:0.21 alpha:1.0];
+}
+
+- (NSColor *)aquamarineAccent {
+    return [NSColor colorWithCalibratedRed:0.19 green:0.77 blue:0.55 alpha:1.0];
+}
+
+- (NSFont *)monoFont:(CGFloat)size bold:(BOOL)bold {
+    NSFont *f = bold ? [NSFont fontWithName:@"JetBrainsMono-Bold" size:size] : [NSFont fontWithName:@"JetBrainsMono-Regular" size:size];
+    if (!f) {
+        f = bold ? [NSFont fontWithName:@"SFMono-Bold" size:size] : [NSFont fontWithName:@"SFMono-Regular" size:size];
     }
-    return pwd;
-}
-
-- (void)navigationChanged:(NSSegmentedControl *)sender {
-    [self.chatContainerView setHidden:(sender.selectedSegment != 0)];
-    [self.conversationsContainerView setHidden:(sender.selectedSegment != 1)];
-    [self.settingsContainerView setHidden:(sender.selectedSegment != 2)];
-    [self.doctorContainerView setHidden:(sender.selectedSegment != 3)];
-
-    if (sender.selectedSegment == 3) {
-        [self runDoctorAudit];
+    if (!f) {
+        f = bold ? [NSFont fontWithName:@"Menlo-Bold" size:size] : [NSFont fontWithName:@"Menlo" size:size];
     }
+    return f ?: (bold ? [NSFont boldSystemFontOfSize:size] : [NSFont systemFontOfSize:size]);
 }
 
-#pragma mark - Chat Screen Setup
-
-- (void)setupChatView:(NSRect)frame panelBg:(NSColor *)panelBg borderColor:(NSColor *)borderColor aquaColor:(NSColor *)aquaColor {
-    self.chatContainerView = [[NSView alloc] initWithFrame:frame];
-    self.chatContainerView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    [self.vibrancyView addSubview:self.chatContainerView];
-
-    NSBox *chatBox = [[NSBox alloc] initWithFrame:self.chatContainerView.bounds];
-    chatBox.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    chatBox.boxType = NSBoxCustom;
-    chatBox.fillColor = panelBg;
-    chatBox.borderColor = borderColor;
-    chatBox.borderWidth = 1.0;
-    chatBox.cornerRadius = 14.0;
-    [self.chatContainerView addSubview:chatBox];
-
-    // Top Status HUD
-    self.statusHeader = [[NSTextField alloc] initWithFrame:NSMakeRect(16, frame.size.height - 42, frame.size.width - 32, 24)];
-    self.statusHeader.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
-    self.statusHeader.stringValue = @"┌─ [Workspace: ~/LocalBuilds/ZigAgent] ── [Model: openai/gpt-oss-120b] ── [Reasoning: max] ── [⚡ UNBOUNDED]";
-    self.statusHeader.font = [NSFont fontWithName:@"Menlo" size:11] ?: [NSFont boldSystemFontOfSize:11];
-    self.statusHeader.textColor = aquaColor;
-    self.statusHeader.bezeled = NO;
-    self.statusHeader.drawsBackground = NO;
-    self.statusHeader.editable = NO;
-    [chatBox.contentView addSubview:self.statusHeader];
-
-    // Scrollable Chat Transcript
-    CGFloat inputHeight = 48;
-    CGFloat chatLogY = inputHeight + 28;
-    CGFloat chatLogHeight = frame.size.height - chatLogY - 48;
-    NSRect scrollRect = NSMakeRect(16, chatLogY, frame.size.width - 32, chatLogHeight);
-
-    self.chatScrollView = [[NSScrollView alloc] initWithFrame:scrollRect];
-    self.chatScrollView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    self.chatScrollView.hasVerticalScroller = YES;
-    self.chatScrollView.hasHorizontalScroller = NO;
-    self.chatScrollView.borderType = NSNoBorder;
-    self.chatScrollView.drawsBackground = NO;
-
-    self.chatTextView = [[NSTextView alloc] initWithFrame:self.chatScrollView.bounds];
-    self.chatTextView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    self.chatTextView.backgroundColor = [NSColor colorWithCalibratedRed:0.03 green:0.04 blue:0.06 alpha:0.95];
-    self.chatTextView.font = [NSFont systemFontOfSize:13];
-    self.chatTextView.editable = NO;
-    self.chatTextView.textContainerInset = NSMakeSize(14, 14);
-
-    self.chatScrollView.documentView = self.chatTextView;
-    [chatBox.contentView addSubview:self.chatScrollView];
-
-    // Bottom Chat Input Bar
-    NSRect inputRect = NSMakeRect(16, 16, frame.size.width - 180, inputHeight);
-    self.goalTextField = [[NSTextField alloc] initWithFrame:inputRect];
-    self.goalTextField.autoresizingMask = NSViewWidthSizable | NSViewMaxYMargin;
-    self.goalTextField.placeholderString = @"Message Ziggy or enter a directive (!<cmd> for shell, /commands for help)...";
-    self.goalTextField.font = [NSFont systemFontOfSize:13];
-    self.goalTextField.textColor = [NSColor whiteColor];
-    self.goalTextField.backgroundColor = [NSColor colorWithCalibratedRed:0.04 green:0.06 blue:0.09 alpha:0.95];
-    self.goalTextField.bezeled = YES;
-    self.goalTextField.bezelStyle = NSTextFieldRoundedBezel;
-    self.goalTextField.continuous = NO;
-    ((NSTextFieldCell *)self.goalTextField.cell).sendsActionOnEndEditing = NO;
-    self.goalTextField.target = self;
-    self.goalTextField.action = @selector(sendMessage:);
-    [chatBox.contentView addSubview:self.goalTextField];
-
-    // Pinned Send Button
-    NSRect sendRect = NSMakeRect(frame.size.width - 156, 16, 84, inputHeight);
-    self.sendButton = [[NSButton alloc] initWithFrame:sendRect];
-    self.sendButton.autoresizingMask = NSViewMinXMargin | NSViewMaxYMargin;
-    self.sendButton.title = @"⚡ SEND";
-    self.sendButton.font = [NSFont boldSystemFontOfSize:11];
-    self.sendButton.bezelStyle = NSBezelStyleRounded;
-    self.sendButton.contentTintColor = aquaColor;
-    self.sendButton.target = self;
-    self.sendButton.action = @selector(sendMessage:);
-    [chatBox.contentView addSubview:self.sendButton];
-
-    // Interrupt Button (<ESC>)
-    NSRect escRect = NSMakeRect(frame.size.width - 68, 16, 52, inputHeight);
-    self.interruptButton = [[NSButton alloc] initWithFrame:escRect];
-    self.interruptButton.autoresizingMask = NSViewMinXMargin | NSViewMaxYMargin;
-    self.interruptButton.title = @"ESC";
-    self.interruptButton.font = [NSFont boldSystemFontOfSize:11];
-    self.interruptButton.bezelStyle = NSBezelStyleRounded;
-    self.interruptButton.contentTintColor = [NSColor colorWithCalibratedRed:1.00 green:0.42 blue:0.21 alpha:1.0];
-    self.interruptButton.target = self;
-    self.interruptButton.action = @selector(interruptExecution:);
-    [chatBox.contentView addSubview:self.interruptButton];
-
-    [self appendSystemMessage:@"⚡ ZIGAGENT NATIVE AGENT RUNTIME INITIALIZED\n• Model: openai/gpt-oss-120b\n• Autonomy: Unbounded Multi-Step Action Loop Enabled\n• Type any request, directive, !<command>, or /commands below.\n\n"];
+- (void)applySpectralShadow:(NSView *)view glowColor:(NSColor *)glowColor radius:(CGFloat)radius {
+    view.wantsLayer = YES;
+    view.layer.shadowColor = glowColor.CGColor;
+    view.layer.shadowOpacity = 0.25;
+    view.layer.shadowRadius = radius;
+    view.layer.shadowOffset = CGSizeMake(0, -2);
 }
 
-#pragma mark - Conversations Screen Setup
+#pragma mark - Top Toolbar
 
-- (void)setupConversationsView:(NSRect)frame panelBg:(NSColor *)panelBg borderColor:(NSColor *)borderColor aquaColor:(NSColor *)aquaColor {
-    self.conversationsContainerView = [[NSView alloc] initWithFrame:frame];
-    self.conversationsContainerView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    [self.vibrancyView addSubview:self.conversationsContainerView];
+- (void)setupTopToolbar {
+    CGFloat barH = 50.0;
+    NSRect barRect = NSMakeRect(0, self.window.contentView.bounds.size.height - barH, self.window.contentView.bounds.size.width, barH);
+    NSView *toolbarView = [[NSView alloc] initWithFrame:barRect];
+    toolbarView.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+    toolbarView.wantsLayer = YES;
+    toolbarView.layer.backgroundColor = [self slateCardBg].CGColor;
+    [self.rootVisualEffect addSubview:toolbarView];
 
-    NSBox *box = [[NSBox alloc] initWithFrame:self.conversationsContainerView.bounds];
-    box.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    box.boxType = NSBoxCustom;
-    box.fillColor = panelBg;
-    box.borderColor = borderColor;
-    box.borderWidth = 1.0;
-    box.cornerRadius = 14.0;
-    [self.conversationsContainerView addSubview:box];
+    // Left Toggle Sessions Button
+    NSButton *toggleSidebarBtn = [[NSButton alloc] initWithFrame:NSMakeRect(78, 11, 100, 28)];
+    toggleSidebarBtn.title = @"☰ Sessions";
+    toggleSidebarBtn.font = [self monoFont:11 bold:YES];
+    toggleSidebarBtn.bezelStyle = NSBezelStyleRounded;
+    toggleSidebarBtn.contentTintColor = [NSColor colorWithCalibratedWhite:0.8 alpha:1.0];
+    toggleSidebarBtn.target = self;
+    toggleSidebarBtn.action = @selector(toggleSidebar);
+    [toolbarView addSubview:toggleSidebarBtn];
 
-    NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(20, frame.size.height - 46, frame.size.width - 40, 26)];
-    title.stringValue = @"🗂️ CONVERSATION SESSIONS & SENSE ARCHIVES";
-    title.font = [NSFont boldSystemFontOfSize:15];
-    title.textColor = aquaColor;
-    title.bezeled = NO;
-    title.drawsBackground = NO;
-    title.editable = NO;
-    NSButton *newChatBtn = [[NSButton alloc] initWithFrame:NSMakeRect(frame.size.width - 390, frame.size.height - 48, 120, 30)];
-    newChatBtn.title = @"+ New Session";
-    newChatBtn.bezelStyle = NSBezelStyleRounded;
-    newChatBtn.contentTintColor = aquaColor;
-    newChatBtn.target = self;
-    newChatBtn.action = @selector(startNewSession:);
-    [box.contentView addSubview:newChatBtn];
+    // Logo & Title
+    NSTextField *logoLbl = [[NSTextField alloc] initWithFrame:NSMakeRect(188, 13, 220, 24)];
+    logoLbl.stringValue = @"⚡ ZIGAGENT // STUDIO";
+    logoLbl.font = [self monoFont:13 bold:YES];
+    logoLbl.textColor = [self aquamarineAccent];
+    logoLbl.bezeled = NO;
+    logoLbl.drawsBackground = NO;
+    logoLbl.editable = NO;
+    [toolbarView addSubview:logoLbl];
 
-    NSButton *deleteBtn = [[NSButton alloc] initWithFrame:NSMakeRect(frame.size.width - 260, frame.size.height - 48, 125, 30)];
-    deleteBtn.title = @"🗑️ Delete";
-    deleteBtn.bezelStyle = NSBezelStyleRounded;
-    deleteBtn.contentTintColor = [NSColor colorWithCalibratedRed:1.0 green:0.4 blue:0.3 alpha:1.0];
-    deleteBtn.target = self;
-    deleteBtn.action = @selector(deleteSelectedSession:);
-    [box.contentView addSubview:deleteBtn];
+    // Top Status & Model Telemetry Badge
+    self.topStatusBadge = [[NSTextField alloc] initWithFrame:NSMakeRect(400, 13, 380, 24)];
+    self.topStatusBadge.autoresizingMask = NSViewWidthSizable;
+    self.topStatusBadge.stringValue = [NSString stringWithFormat:@"Model: %@ • 🧠 max • Context: 1%%", self.activeModelName];
+    self.topStatusBadge.font = [self monoFont:11 bold:NO];
+    self.topStatusBadge.textColor = [NSColor colorWithCalibratedWhite:0.65 alpha:1.0];
+    self.topStatusBadge.bezeled = NO;
+    self.topStatusBadge.drawsBackground = NO;
+    self.topStatusBadge.editable = NO;
+    [toolbarView addSubview:self.topStatusBadge];
 
-    NSButton *clearBtn = [[NSButton alloc] initWithFrame:NSMakeRect(frame.size.width - 125, frame.size.height - 48, 105, 30)];
-    clearBtn.title = @"🧹 Clear All";
-    clearBtn.bezelStyle = NSBezelStyleRounded;
-    clearBtn.contentTintColor = [NSColor colorWithCalibratedRed:0.7 green:0.7 blue:0.8 alpha:1.0];
-    clearBtn.target = self;
-    clearBtn.action = @selector(clearAllSessions:);
-    [box.contentView addSubview:clearBtn];
+    // Right Multi-Dock Segmented Selector (Browser / Preview / Terminal / Settings)
+    self.dockTabSelector = [NSSegmentedControl segmentedControlWithLabels:@[@"👁️ Preview", @"🌐 Browser", @"⚡ Terminal", @"⚙️ Config"]
+                                                             trackingMode:NSSegmentSwitchTrackingSelectOne
+                                                                   target:self
+                                                                   action:@selector(dockTabChanged:)];
+    self.dockTabSelector.frame = NSMakeRect(toolbarView.bounds.size.width - 390, 10, 374, 30);
+    self.dockTabSelector.autoresizingMask = NSViewMinXMargin;
+    self.dockTabSelector.selectedSegment = 0;
+    self.dockTabSelector.font = [self monoFont:11 bold:YES];
+    [toolbarView addSubview:self.dockTabSelector];
+}
 
-    // Conversations Table
-    NSRect tableRect = NSMakeRect(20, 20, frame.size.width - 40, frame.size.height - 80);
-    NSScrollView *tableScroll = [[NSScrollView alloc] initWithFrame:tableRect];
-    tableScroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    tableScroll.hasVerticalScroller = YES;
+#pragma mark - Master 3-Column Split View
 
-    self.conversationsList = [NSMutableArray arrayWithArray:@[
-        @{@"title": @"Session #1: Full Architecture & Invariant Refactor", @"date": @"Today, 4:12 PM", @"tokens": @"3.6k tokens", @"engrams": @"4 engrams"},
-        @{@"title": @"Session #2: POSIX Terminal Engine & ! Shell Runner", @"date": @"Today, 3:30 PM", @"tokens": @"8.1k tokens", @"engrams": @"12 engrams"},
-        @{@"title": @"Session #3: OmniLattice Mesh Sync & Merkle Verification", @"date": @"Today, 2:15 PM", @"tokens": @"14.2k tokens", @"engrams": @"19 engrams"}
+- (void)setupMasterSplitView {
+    CGFloat barH = 50.0;
+    NSRect splitRect = NSMakeRect(0, 0, self.window.contentView.bounds.size.width, self.window.contentView.bounds.size.height - barH);
+    self.masterSplitView = [[NSSplitView alloc] initWithFrame:splitRect];
+    self.masterSplitView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    self.masterSplitView.vertical = YES;
+    self.masterSplitView.dividerStyle = NSSplitViewDividerStyleThin;
+    [self.rootVisualEffect addSubview:self.masterSplitView];
+}
+
+#pragma mark - Left Sidebar (Sessions Drawer)
+
+- (void)setupSidebar {
+    self.sidebarView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 240, self.masterSplitView.bounds.size.height)];
+    self.sidebarView.wantsLayer = YES;
+    self.sidebarView.layer.backgroundColor = [self slateBackground].CGColor;
+
+    // Header
+    NSTextField *sideHdr = [[NSTextField alloc] initWithFrame:NSMakeRect(14, self.sidebarView.bounds.size.height - 36, 120, 22)];
+    sideHdr.autoresizingMask = NSViewMinYMargin;
+    sideHdr.stringValue = @"SESSIONS";
+    sideHdr.font = [self monoFont:11 bold:YES];
+    sideHdr.textColor = [self bloodstoneOrange];
+    sideHdr.bezeled = NO;
+    sideHdr.drawsBackground = NO;
+    sideHdr.editable = NO;
+    [self.sidebarView addSubview:sideHdr];
+
+    NSButton *newBtn = [[NSButton alloc] initWithFrame:NSMakeRect(self.sidebarView.bounds.size.width - 86, self.sidebarView.bounds.size.height - 38, 72, 24)];
+    newBtn.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
+    newBtn.title = @"+ New";
+    newBtn.font = [self monoFont:10 bold:YES];
+    newBtn.bezelStyle = NSBezelStyleRounded;
+    newBtn.contentTintColor = [self aquamarineAccent];
+    newBtn.target = self;
+    newBtn.action = @selector(startNewSession);
+    [self.sidebarView addSubview:newBtn];
+
+    // Sessions Table
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(10, 44, self.sidebarView.bounds.size.width - 20, self.sidebarView.bounds.size.height - 88)];
+    scroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    scroll.hasVerticalScroller = YES;
+    scroll.borderType = NSNoBorder;
+    scroll.drawsBackground = NO;
+
+    self.sessionsList = [NSMutableArray arrayWithArray:@[
+        @{@"title": @"Full Native Architecture Refactor", @"time": @"Just now", @"id": @"ses_101"},
+        @{@"title": @"OmniLattice Continuity & Ledgers", @"time": @"1 hour ago", @"id": @"ses_102"},
+        @{@"title": @"Zero-GC Arena Memory Optimization", @"time": @"Yesterday", @"id": @"ses_103"}
     ]];
 
-    self.conversationsTable = [[NSTableView alloc] initWithFrame:tableScroll.bounds];
-    NSTableColumn *col = [[NSTableColumn alloc] initWithIdentifier:@"SessionColumn"];
-    col.title = @"Session";
-    col.width = frame.size.width - 60;
-    [self.conversationsTable addTableColumn:col];
-    self.conversationsTable.delegate = self;
-    self.conversationsTable.dataSource = self;
-    self.conversationsTable.backgroundColor = [NSColor colorWithCalibratedRed:0.03 green:0.04 blue:0.06 alpha:0.95];
+    self.sessionsTableView = [[NSTableView alloc] initWithFrame:scroll.bounds];
+    NSTableColumn *col = [[NSTableColumn alloc] initWithIdentifier:@"SessionCol"];
+    col.width = scroll.bounds.size.width - 20;
+    [self.sessionsTableView addTableColumn:col];
+    self.sessionsTableView.delegate = self;
+    self.sessionsTableView.dataSource = self;
+    self.sessionsTableView.headerView = nil;
+    self.sessionsTableView.backgroundColor = [NSColor clearColor];
 
-    tableScroll.documentView = self.conversationsTable;
-    [box.contentView addSubview:tableScroll];
+    scroll.documentView = self.sessionsTableView;
+    [self.sidebarView addSubview:scroll];
+
+    // Bottom Delete / Clear Actions
+    NSButton *delBtn = [[NSButton alloc] initWithFrame:NSMakeRect(10, 10, 105, 26)];
+    delBtn.title = @"🗑️ Delete";
+    delBtn.font = [self monoFont:10 bold:NO];
+    delBtn.bezelStyle = NSBezelStyleRounded;
+    delBtn.contentTintColor = [NSColor colorWithCalibratedRed:1.0 green:0.3 blue:0.3 alpha:1.0];
+    delBtn.target = self;
+    delBtn.action = @selector(deleteSelectedSession);
+    [self.sidebarView addSubview:delBtn];
+
+    NSButton *clearBtn = [[NSButton alloc] initWithFrame:NSMakeRect(125, 10, 105, 26)];
+    clearBtn.title = @"🧹 Clear All";
+    clearBtn.font = [self monoFont:10 bold:NO];
+    clearBtn.bezelStyle = NSBezelStyleRounded;
+    clearBtn.contentTintColor = [NSColor colorWithCalibratedWhite:0.6 alpha:1.0];
+    clearBtn.target = self;
+    clearBtn.action = @selector(clearAllSessions);
+    [self.sidebarView addSubview:clearBtn];
+
+    [self.masterSplitView addSubview:self.sidebarView];
 }
 
-#pragma mark - Settings Screen Setup
+#pragma mark - Center Chat & Action Feed
 
-- (void)setupSettingsView:(NSRect)frame panelBg:(NSColor *)panelBg borderColor:(NSColor *)borderColor aquaColor:(NSColor *)aquaColor {
-    self.settingsContainerView = [[NSView alloc] initWithFrame:frame];
-    self.settingsContainerView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    [self.vibrancyView addSubview:self.settingsContainerView];
+- (void)setupChatCenter {
+    self.chatCenterView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 520, self.masterSplitView.bounds.size.height)];
+    self.chatCenterView.wantsLayer = YES;
+    self.chatCenterView.layer.backgroundColor = [self slateCardBg].CGColor;
+    [self applySpectralShadow:self.chatCenterView glowColor:[NSColor blackColor] radius:10];
 
-    NSBox *box = [[NSBox alloc] initWithFrame:self.settingsContainerView.bounds];
+    // Chat Transcript Area
+    CGFloat inputH = 56.0;
+    NSRect logRect = NSMakeRect(14, inputH + 20, self.chatCenterView.bounds.size.width - 28, self.chatCenterView.bounds.size.height - inputH - 30);
+    self.chatLogScrollView = [[NSScrollView alloc] initWithFrame:logRect];
+    self.chatLogScrollView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    self.chatLogScrollView.hasVerticalScroller = YES;
+    self.chatLogScrollView.borderType = NSNoBorder;
+    self.chatLogScrollView.drawsBackground = NO;
+
+    self.chatLogTextView = [[NSTextView alloc] initWithFrame:self.chatLogScrollView.bounds];
+    self.chatLogTextView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    self.chatLogTextView.backgroundColor = [NSColor clearColor];
+    self.chatLogTextView.font = [self monoFont:12 bold:NO];
+    self.chatLogTextView.textColor = [NSColor colorWithCalibratedWhite:0.92 alpha:1.0];
+    self.chatLogTextView.editable = NO;
+    self.chatLogTextView.textContainerInset = NSMakeSize(10, 10);
+
+    self.chatLogScrollView.documentView = self.chatLogTextView;
+    [self.chatCenterView addSubview:self.chatLogScrollView];
+
+    // Floating Input Card Container (Spectral 3D Glass Pill)
+    NSRect inputRect = NSMakeRect(14, 14, self.chatCenterView.bounds.size.width - 28, inputH);
+    NSBox *inputCard = [[NSBox alloc] initWithFrame:inputRect];
+    inputCard.autoresizingMask = NSViewWidthSizable | NSViewMaxYMargin;
+    inputCard.boxType = NSBoxCustom;
+    inputCard.fillColor = [NSColor colorWithCalibratedRed:0.05 green:0.07 blue:0.09 alpha:0.98];
+    inputCard.borderColor = [self slateBorderColor];
+    inputCard.borderWidth = 1.0;
+    inputCard.cornerRadius = 12.0;
+    [self applySpectralShadow:inputCard glowColor:[self bloodstoneOrange] radius:4];
+    [self.chatCenterView addSubview:inputCard];
+
+    // Prompt Indicator `>`
+    NSTextField *promptPrefix = [[NSTextField alloc] initWithFrame:NSMakeRect(12, 16, 20, 24)];
+    promptPrefix.stringValue = @">";
+    promptPrefix.font = [self monoFont:14 bold:YES];
+    promptPrefix.textColor = [NSColor colorWithCalibratedRed:0.66 green:0.33 blue:0.97 alpha:1.0]; // Purple prompt
+    promptPrefix.bezeled = NO;
+    promptPrefix.drawsBackground = NO;
+    promptPrefix.editable = NO;
+    [inputCard.contentView addSubview:promptPrefix];
+
+    // Main Chat Input Field
+    CGFloat btnW = 74.0;
+    self.chatInputField = [[NSTextField alloc] initWithFrame:NSMakeRect(32, 10, inputCard.bounds.size.width - btnW - 44, 34)];
+    self.chatInputField.autoresizingMask = NSViewWidthSizable;
+    self.chatInputField.placeholderString = @"Message Ziggy or enter directive (!<cmd> for shell)...";
+    self.chatInputField.font = [self monoFont:12 bold:NO];
+    self.chatInputField.textColor = [NSColor whiteColor];
+    self.chatInputField.bezeled = NO;
+    self.chatInputField.drawsBackground = NO;
+    self.chatInputField.delegate = self;
+    self.chatInputField.target = self;
+    self.chatInputField.action = @selector(sendCurrentMessage);
+    [inputCard.contentView addSubview:self.chatInputField];
+
+    // Send Action Button
+    self.sendActionButton = [[NSButton alloc] initWithFrame:NSMakeRect(inputCard.bounds.size.width - btnW - 10, 11, btnW, 32)];
+    self.sendActionButton.autoresizingMask = NSViewMinXMargin;
+    self.sendActionButton.title = @"⚡ SEND";
+    self.sendActionButton.font = [self monoFont:11 bold:YES];
+    self.sendActionButton.bezelStyle = NSBezelStyleRounded;
+    self.sendActionButton.contentTintColor = [self bloodstoneOrange];
+    self.sendActionButton.target = self;
+    self.sendActionButton.action = @selector(sendCurrentMessage);
+    [inputCard.contentView addSubview:self.sendActionButton];
+
+    [self.masterSplitView addSubview:self.chatCenterView];
+
+    [self appendSignalMessage:@"⚡ ZIGAGENT NATIVE ACTION RUNTIME READY\n• Signal Filter: Active (Zero metadata bloat)\n• Built-in Browser, Code Editor, and Live Preview operational.\n\n" type:@"system"];
+}
+
+#pragma mark - Right Multi-Dock (Browser / Preview / Terminal / Settings)
+
+- (void)setupRightMultiDock {
+    self.rightDockView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 560, self.masterSplitView.bounds.size.height)];
+    self.rightDockView.wantsLayer = YES;
+    self.rightDockView.layer.backgroundColor = [self slateBackground].CGColor;
+
+    [self setupPreviewPanel];
+    [self setupBrowserPanel];
+    [self setupTerminalPanel];
+    [self setupSettingsPanel];
+
+    [self.browserContainer setHidden:YES];
+    [self.terminalContainer setHidden:YES];
+    [self.settingsContainer setHidden:YES];
+    [self.previewContainer setHidden:NO];
+
+    [self.masterSplitView addSubview:self.rightDockView];
+}
+
+#pragma mark - 1. Built-in Artifact & Preview Panel
+
+- (void)setupPreviewPanel {
+    self.previewContainer = [[NSView alloc] initWithFrame:self.rightDockView.bounds];
+    self.previewContainer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [self.rightDockView addSubview:self.previewContainer];
+
+    // Header Controls: File path + Toggle Code/Render + Save button
+    CGFloat topH = 42.0;
+    NSView *header = [[NSView alloc] initWithFrame:NSMakeRect(10, self.previewContainer.bounds.size.height - topH - 8, self.previewContainer.bounds.size.width - 20, topH)];
+    header.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+    header.wantsLayer = YES;
+    header.layer.backgroundColor = [self slateCardBg].CGColor;
+    header.layer.cornerRadius = 8.0;
+    header.layer.borderColor = [self slateBorderColor].CGColor;
+    header.layer.borderWidth = 1.0;
+    [self.previewContainer addSubview:header];
+
+    self.currentPreviewFilePathField = [[NSTextField alloc] initWithFrame:NSMakeRect(10, 8, header.bounds.size.width - 240, 24)];
+    self.currentPreviewFilePathField.autoresizingMask = NSViewWidthSizable;
+    self.currentPreviewFilePathField.stringValue = @"src/main.zig";
+    self.currentPreviewFilePathField.font = [self monoFont:11 bold:YES];
+    self.currentPreviewFilePathField.textColor = [self aquamarineAccent];
+    self.currentPreviewFilePathField.bezeled = NO;
+    self.currentPreviewFilePathField.drawsBackground = NO;
+    self.currentPreviewFilePathField.editable = YES;
+    self.currentPreviewFilePathField.target = self;
+    self.currentPreviewFilePathField.action = @selector(openCustomFilePath);
+    [header addSubview:self.currentPreviewFilePathField];
+
+    self.previewModeToggle = [NSSegmentedControl segmentedControlWithLabels:@[@"Code", @"Render"]
+                                                               trackingMode:NSSegmentSwitchTrackingSelectOne
+                                                                     target:self
+                                                                     action:@selector(previewModeChanged:)];
+    self.previewModeToggle.frame = NSMakeRect(header.bounds.size.width - 220, 7, 120, 26);
+    self.previewModeToggle.autoresizingMask = NSViewMinXMargin;
+    self.previewModeToggle.selectedSegment = 0;
+    self.previewModeToggle.font = [self monoFont:10 bold:YES];
+    [header addSubview:self.previewModeToggle];
+
+    NSButton *saveBtn = [[NSButton alloc] initWithFrame:NSMakeRect(header.bounds.size.width - 92, 6, 82, 28)];
+    saveBtn.autoresizingMask = NSViewMinXMargin;
+    saveBtn.title = @"💾 Save";
+    saveBtn.font = [self monoFont:10 bold:YES];
+    saveBtn.bezelStyle = NSBezelStyleRounded;
+    saveBtn.contentTintColor = [self bloodstoneOrange];
+    saveBtn.target = self;
+    saveBtn.action = @selector(saveCurrentPreviewFile);
+    [header addSubview:saveBtn];
+
+    // Source Code Editor Text View
+    NSRect editorRect = NSMakeRect(10, 10, self.previewContainer.bounds.size.width - 20, self.previewContainer.bounds.size.height - topH - 24);
+    NSScrollView *editorScroll = [[NSScrollView alloc] initWithFrame:editorRect];
+    editorScroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    editorScroll.hasVerticalScroller = YES;
+    editorScroll.hasHorizontalScroller = YES;
+    editorScroll.borderType = NSLineBorder;
+    editorScroll.borderColor = [self slateBorderColor];
+    editorScroll.wantsLayer = YES;
+    editorScroll.layer.cornerRadius = 8.0;
+
+    self.codeEditorTextView = [[NSTextView alloc] initWithFrame:editorScroll.bounds];
+    self.codeEditorTextView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    self.codeEditorTextView.backgroundColor = [self slateCardBg];
+    self.codeEditorTextView.font = [self monoFont:12 bold:NO];
+    self.codeEditorTextView.textColor = [NSColor colorWithCalibratedWhite:0.95 alpha:1.0];
+    self.codeEditorTextView.textContainerInset = NSMakeSize(12, 12);
+    self.codeEditorTextView.automaticQuoteSubstitutionEnabled = NO;
+
+    editorScroll.documentView = self.codeEditorTextView;
+    [self.previewContainer addSubview:editorScroll];
+
+    // Markdown / HTML Live Render WebView
+    self.markdownRenderWebView = [[WKWebView alloc] initWithFrame:editorRect];
+    self.markdownRenderWebView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    self.markdownRenderWebView.wantsLayer = YES;
+    self.markdownRenderWebView.layer.cornerRadius = 8.0;
+    self.markdownRenderWebView.layer.borderColor = [self slateBorderColor].CGColor;
+    self.markdownRenderWebView.layer.borderWidth = 1.0;
+    [self.markdownRenderWebView setHidden:YES];
+    [self.previewContainer addSubview:self.markdownRenderWebView];
+}
+
+- (void)previewModeChanged:(NSSegmentedControl *)sender {
+    if (sender.selectedSegment == 0) {
+        [self.codeEditorTextView.enclosingScrollView setHidden:NO];
+        [self.markdownRenderWebView setHidden:YES];
+    } else {
+        [self.codeEditorTextView.enclosingScrollView setHidden:YES];
+        [self.markdownRenderWebView setHidden:NO];
+        [self renderCodeToHtmlView:self.codeEditorTextView.string filePath:self.currentPreviewFilePathField.stringValue];
+    }
+}
+
+- (void)renderCodeToHtmlView:(NSString *)rawContent filePath:(NSString *)path {
+    NSString *ext = [path pathExtension].lowercaseString;
+    NSString *html = @"";
+
+    if ([ext isEqualToString:@"html"] || [ext isEqualToString:@"htm"]) {
+        html = rawContent;
+    } else if ([ext isEqualToString:@"md"] || [ext isEqualToString:@"markdown"]) {
+        // Minimal fast markdown converter wrapper
+        NSString *escaped = [rawContent stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"];
+        escaped = [escaped stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+        escaped = [escaped stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"];
+        escaped = [escaped stringByReplacingOccurrencesOfString:@"\n" withString:@"<br/>\n"];
+
+        html = [NSString stringWithFormat:
+            @"<!DOCTYPE html><html><head><style>"
+            @"body { font-family: -apple-system, sans-serif; background: #0e1217; color: #e2e8f0; padding: 24px; line-height: 1.6; }"
+            @"h1, h2, h3 { color: #00f2fe; }"
+            @"code { font-family: 'JetBrains Mono', monospace; background: #1a202c; padding: 2px 6px; border-radius: 4px; color: #31c48d; }"
+            @"pre { background: #13171e; padding: 16px; border-radius: 8px; border: 1px solid #2d3748; overflow-x: auto; }"
+            @"</style></head><body>%@</body></html>", escaped];
+    } else {
+        NSString *escaped = [rawContent stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+        html = [NSString stringWithFormat:
+            @"<!DOCTYPE html><html><head><style>"
+            @"body { font-family: 'JetBrains Mono', monospace; background: #0a0d12; color: #cbd5e1; padding: 18px; }"
+            @"pre { margin: 0; white-space: pre-wrap; word-break: break-all; }"
+            @"</style></head><body><pre>%@</pre></body></html>", escaped];
+    }
+
+    [self.markdownRenderWebView loadHTMLString:html baseURL:nil];
+}
+
+#pragma mark - 2. Built-in Browser Panel
+
+- (void)setupBrowserPanel {
+    self.browserContainer = [[NSView alloc] initWithFrame:self.rightDockView.bounds];
+    self.browserContainer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [self.rightDockView addSubview:self.browserContainer];
+
+    // Top Navigation Bar
+    CGFloat topH = 42.0;
+    NSView *navBar = [[NSView alloc] initWithFrame:NSMakeRect(10, self.browserContainer.bounds.size.height - topH - 8, self.browserContainer.bounds.size.width - 20, topH)];
+    navBar.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+    navBar.wantsLayer = YES;
+    navBar.layer.backgroundColor = [self slateCardBg].CGColor;
+    navBar.layer.cornerRadius = 8.0;
+    navBar.layer.borderColor = [self slateBorderColor].CGColor;
+    navBar.layer.borderWidth = 1.0;
+    [self.browserContainer addSubview:navBar];
+
+    NSButton *backBtn = [[NSButton alloc] initWithFrame:NSMakeRect(8, 7, 30, 26)];
+    backBtn.title = @"◀";
+    backBtn.font = [self monoFont:11 bold:YES];
+    backBtn.bezelStyle = NSBezelStyleRounded;
+    backBtn.target = self;
+    backBtn.action = @selector(browserGoBack);
+    [navBar addSubview:backBtn];
+
+    NSButton *reloadBtn = [[NSButton alloc] initWithFrame:NSMakeRect(42, 7, 30, 26)];
+    reloadBtn.title = @"🔄";
+    reloadBtn.font = [self monoFont:11 bold:YES];
+    reloadBtn.bezelStyle = NSBezelStyleRounded;
+    reloadBtn.target = self;
+    reloadBtn.action = @selector(browserReload);
+    [navBar addSubview:reloadBtn];
+
+    self.browserUrlField = [[NSTextField alloc] initWithFrame:NSMakeRect(80, 8, navBar.bounds.size.width - 90, 24)];
+    self.browserUrlField.autoresizingMask = NSViewWidthSizable;
+    self.browserUrlField.stringValue = @"http://localhost:4040";
+    self.browserUrlField.font = [self monoFont:11 bold:NO];
+    self.browserUrlField.textColor = [NSColor whiteColor];
+    self.browserUrlField.bezeled = NO;
+    self.browserUrlField.drawsBackground = NO;
+    self.browserUrlField.target = self;
+    self.browserUrlField.action = @selector(browserNavigate);
+    [navBar addSubview:self.browserUrlField];
+
+    // WebKit View
+    NSRect webRect = NSMakeRect(10, 10, self.browserContainer.bounds.size.width - 20, self.browserContainer.bounds.size.height - topH - 24);
+    self.builtInWebView = [[WKWebView alloc] initWithFrame:webRect];
+    self.builtInWebView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    self.builtInWebView.wantsLayer = YES;
+    self.builtInWebView.layer.cornerRadius = 8.0;
+    self.builtInWebView.layer.borderColor = [self slateBorderColor].CGColor;
+    self.builtInWebView.layer.borderWidth = 1.0;
+    [self.browserContainer addSubview:self.builtInWebView];
+
+    [self browserNavigate];
+}
+
+- (void)browserNavigate {
+    NSString *urlStr = self.browserUrlField.stringValue;
+    if (![urlStr hasPrefix:@"http://"] && ![urlStr hasPrefix:@"https://"] && ![urlStr hasPrefix:@"file://"]) {
+        urlStr = [NSString stringWithFormat:@"http://%@", urlStr];
+        self.browserUrlField.stringValue = urlStr;
+    }
+    NSURL *url = [NSURL URLWithString:urlStr];
+    if (url) {
+        [self.builtInWebView loadRequest:[NSURLRequest requestWithURL:url]];
+    }
+}
+
+- (void)browserGoBack {
+    if ([self.builtInWebView canGoBack]) [self.builtInWebView goBack];
+}
+
+- (void)browserReload {
+    [self.builtInWebView reload];
+}
+
+#pragma mark - 3. Built-in Terminal Panel
+
+- (void)setupTerminalPanel {
+    self.terminalContainer = [[NSView alloc] initWithFrame:self.rightDockView.bounds];
+    self.terminalContainer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [self.rightDockView addSubview:self.terminalContainer];
+
+    // Terminal Input at Bottom
+    CGFloat inputH = 40.0;
+    NSBox *termCard = [[NSBox alloc] initWithFrame:NSMakeRect(10, 10, self.terminalContainer.bounds.size.width - 20, inputH)];
+    termCard.autoresizingMask = NSViewWidthSizable | NSViewMaxYMargin;
+    termCard.boxType = NSBoxCustom;
+    termCard.fillColor = [NSColor colorWithCalibratedRed:0.06 green:0.08 blue:0.11 alpha:0.98];
+    termCard.borderColor = [self slateBorderColor];
+    termCard.borderWidth = 1.0;
+    termCard.cornerRadius = 8.0;
+    [self.terminalContainer addSubview:termCard];
+
+    NSTextField *termPmt = [[NSTextField alloc] initWithFrame:NSMakeRect(8, 10, 18, 20)];
+    termPmt.stringValue = @"$";
+    termPmt.font = [self monoFont:12 bold:YES];
+    termPmt.textColor = [self aquamarineAccent];
+    termPmt.bezeled = NO;
+    termPmt.drawsBackground = NO;
+    termPmt.editable = NO;
+    [termCard.contentView addSubview:termPmt];
+
+    self.terminalInputField = [[NSTextField alloc] initWithFrame:NSMakeRect(28, 6, termCard.bounds.size.width - 36, 26)];
+    self.terminalInputField.autoresizingMask = NSViewWidthSizable;
+    self.terminalInputField.placeholderString = @"Execute shell command (e.g. ls, git status, zig build)...";
+    self.terminalInputField.font = [self monoFont:11 bold:NO];
+    self.terminalInputField.textColor = [NSColor whiteColor];
+    self.terminalInputField.bezeled = NO;
+    self.terminalInputField.drawsBackground = NO;
+    self.terminalInputField.target = self;
+    self.terminalInputField.action = @selector(executeTerminalInput);
+    [termCard.contentView addSubview:self.terminalInputField];
+
+    // Output Log Area
+    NSRect termLogRect = NSMakeRect(10, inputH + 18, self.terminalContainer.bounds.size.width - 20, self.terminalContainer.bounds.size.height - inputH - 28);
+    NSScrollView *termScroll = [[NSScrollView alloc] initWithFrame:termLogRect];
+    termScroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    termScroll.hasVerticalScroller = YES;
+    termScroll.borderType = NSLineBorder;
+    termScroll.borderColor = [self slateBorderColor];
+    termScroll.wantsLayer = YES;
+    termScroll.layer.cornerRadius = 8.0;
+
+    self.terminalOutputTextView = [[NSTextView alloc] initWithFrame:termScroll.bounds];
+    self.terminalOutputTextView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    self.terminalOutputTextView.backgroundColor = [self slateCardBg];
+    self.terminalOutputTextView.font = [self monoFont:11 bold:NO];
+    self.terminalOutputTextView.textColor = [NSColor colorWithCalibratedRed:0.25 green:0.85 blue:0.65 alpha:1.0];
+    self.terminalOutputTextView.editable = NO;
+    self.terminalOutputTextView.textContainerInset = NSMakeSize(10, 10);
+    self.terminalOutputTextView.string = @"⚡ ZIGAGENT INTEGRATED TERMINAL READY\nType any shell command below to execute.\n\n";
+
+    termScroll.documentView = self.terminalOutputTextView;
+    [self.terminalContainer addSubview:termScroll];
+}
+
+- (void)executeTerminalInput {
+    NSString *cmd = [self.terminalInputField.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (cmd.length == 0) return;
+    self.terminalInputField.stringValue = @"";
+
+    [self appendTerminalOutput:[NSString stringWithFormat:@"\n$ %@\n", cmd]];
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSTask *task = [[NSTask alloc] init];
+        task.launchPath = @"/bin/zsh";
+        task.arguments = @[@"-c", cmd];
+        NSPipe *pipe = [NSPipe pipe];
+        task.standardOutput = pipe;
+        task.standardError = pipe;
+        [task launch];
+        NSData *data = [[pipe fileHandleForReading] readDataToEndOfFile];
+        [task waitUntilExit];
+        NSString *outStr = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self appendTerminalOutput:outStr];
+        });
+    });
+}
+
+- (void)appendTerminalOutput:(NSString *)text {
+    NSAttributedString *attr = [[NSAttributedString alloc] initWithString:text attributes:@{
+        NSForegroundColorAttributeName: [NSColor colorWithCalibratedRed:0.75 green:0.85 blue:0.95 alpha:1.0],
+        NSFontAttributeName: [self monoFont:11 bold:NO]
+    }];
+    [self.terminalOutputTextView.textStorage appendAttributedString:attr];
+    [self.terminalOutputTextView scrollRangeToVisible:NSMakeRange(self.terminalOutputTextView.string.length, 0)];
+}
+
+#pragma mark - 4. Built-in Settings Panel
+
+- (void)setupSettingsPanel {
+    self.settingsContainer = [[NSView alloc] initWithFrame:self.rightDockView.bounds];
+    self.settingsContainer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [self.rightDockView addSubview:self.settingsContainer];
+
+    NSBox *box = [[NSBox alloc] initWithFrame:NSMakeRect(10, 10, self.settingsContainer.bounds.size.width - 20, self.settingsContainer.bounds.size.height - 20)];
     box.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     box.boxType = NSBoxCustom;
-    box.fillColor = panelBg;
-    box.borderColor = borderColor;
+    box.fillColor = [self slateCardBg];
+    box.borderColor = [self slateBorderColor];
     box.borderWidth = 1.0;
-    box.cornerRadius = 14.0;
-    [self.settingsContainerView addSubview:box];
+    box.cornerRadius = 10.0;
+    [self.settingsContainer addSubview:box];
 
-    NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(24, frame.size.height - 46, frame.size.width - 48, 26)];
-    title.stringValue = @"⚙️ PREFERENCES & REASONING ARCHITECTURE";
-    title.font = [NSFont boldSystemFontOfSize:15];
-    title.textColor = aquaColor;
+    NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(20, box.bounds.size.height - 40, box.bounds.size.width - 40, 24)];
+    title.stringValue = @"⚙️ PREFERENCES & INFERENCE ROUTING";
+    title.font = [self monoFont:13 bold:YES];
+    title.textColor = [self bloodstoneOrange];
     title.bezeled = NO;
     title.drawsBackground = NO;
     title.editable = NO;
     [box.contentView addSubview:title];
 
-    CGFloat y = frame.size.height - 84;
-    CGFloat labelW = 220;
-    CGFloat fieldW = 320;
+    CGFloat y = box.bounds.size.height - 80;
+    CGFloat labelW = 180;
+    CGFloat fieldW = 280;
 
-    // 1. Model Selection
-    [self addSettingLabel:@"Frontier / Stealth Model" y:y container:box.contentView width:labelW];
-    self.modelSelectPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(labelW + 30, y - 4, fieldW, 26) pullsDown:NO];
-    [self.modelSelectPopup addItemsWithTitles:@[
-        @"openai/gpt-oss-120b (Groq / OpenRouter)",
-        @"qwen/qwen3.8-27b (Groq Fast Inference)",
-        @"nvidia/nemotron-3-ultra-550b:free (1M Context)",
-        @"poolside/laguna-s-2.1:free (Coding Specialist)",
-        @"thinkingmachines/inkling:free (975B Frontier)",
-        @"anthropic/claude-3.7-sonnet:beta"
+    // Model Selector
+    [self addSettingRow:@"Active Model" y:y container:box.contentView labelW:labelW];
+    self.modelPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(labelW + 20, y - 4, fieldW, 26) pullsDown:NO];
+    [self.modelPopup addItemsWithTitles:@[
+        @"openai/gpt-oss-120b (Frontier)",
+        @"anthropic/claude-3.7-sonnet (Hybrid)",
+        @"google/gemini-2.5-pro (1M Context)",
+        @"deepseek/deepseek-r1 (Reasoning)",
+        @"qwen/qwen3.8-27b (Stealth)",
+        @"meta-llama/llama-3.3-70b-instruct",
+        @"nvidia/nemotron-3-ultra-550b:free",
+        @"poolside/laguna-s-2.1:free",
+        @"ollama/qwen2.5-coder:32b"
     ]];
-    [box.contentView addSubview:self.modelSelectPopup];
+    [box.contentView addSubview:self.modelPopup];
 
-    // 2. Thinking Effort
-    y -= 36;
-    [self addSettingLabel:@"Thinking / Reasoning Depth" y:y container:box.contentView width:labelW];
-    self.thinkingEffortPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(labelW + 30, y - 4, fieldW, 26) pullsDown:NO];
-    [self.thinkingEffortPopup addItemsWithTitles:@[@"max (Deepest Autonomous Search)", @"high (Standard Reasoning)", @"medium", @"low"]];
-    [box.contentView addSubview:self.thinkingEffortPopup];
+    // Reasoning Level
+    y -= 38;
+    [self addSettingRow:@"Reasoning Depth" y:y container:box.contentView labelW:labelW];
+    self.reasoningPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(labelW + 20, y - 4, fieldW, 26) pullsDown:NO];
+    [self.reasoningPopup addItemsWithTitles:@[@"max (Deep 4-Pass Metacognition)", @"high", @"medium", @"low"]];
+    [box.contentView addSubview:self.reasoningPopup];
 
-    // 3. Autonomy Mode
-    y -= 36;
-    [self addSettingLabel:@"Autonomy Mode" y:y container:box.contentView width:labelW];
-    self.unboundedAutonomyCheck = [NSButton checkboxWithTitle:@"⚡ Unbounded Autonomy (Unlimited step loop until invariant verification)" target:self action:@selector(saveSettings)];
-    self.unboundedAutonomyCheck.frame = NSMakeRect(labelW + 30, y - 4, 460, 24);
-    self.unboundedAutonomyCheck.state = NSControlStateValueOn;
-    [box.contentView addSubview:self.unboundedAutonomyCheck];
+    // Unbounded Autonomy Checkbox
+    y -= 38;
+    self.unboundedCheck = [NSButton checkboxWithTitle:@"⚡ Enable Unbounded Autonomy Loop (Infinite Steps)" target:self action:nil];
+    self.unboundedCheck.frame = NSMakeRect(20, y, 400, 24);
+    self.unboundedCheck.state = NSControlStateValueOn;
+    self.unboundedCheck.font = [self monoFont:11 bold:NO];
+    [box.contentView addSubview:self.unboundedCheck];
 
-    // 4. Context Strategy
-    y -= 36;
-    [self addSettingLabel:@"Context Strategy" y:y container:box.contentView width:labelW];
-    self.contextStrategyPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(labelW + 30, y - 4, fieldW, 26) pullsDown:NO];
-    [self.contextStrategyPopup addItemsWithTitles:@[
-        @"Hierarchical Engrams (Lowest Tokens • ~1-2k/turn)",
-        @"Rolling Window (Recent Turns Only)",
-        @"Full Historical Replay (High Tokens)"
-    ]];
-    [box.contentView addSubview:self.contextStrategyPopup];
-
-    // 5. Auto-Compact Threshold
-    y -= 36;
-    [self addSettingLabel:@"Auto-Compact Threshold" y:y container:box.contentView width:labelW];
-    self.autoCompactPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(labelW + 30, y - 4, fieldW, 26) pullsDown:NO];
-    [self.autoCompactPopup addItemsWithTitles:@[@"75% of context window (Default)", @"50%", @"65%", @"85%", @"90%"]];
-    [box.contentView addSubview:self.autoCompactPopup];
-
-    // 6. Pre-Compaction Dump
-    y -= 36;
-    [self addSettingLabel:@"Pre-Compaction Dump" y:y container:box.contentView width:labelW];
-    self.preCompactDumpCheck = [NSButton checkboxWithTitle:@"✔ Automatically serialize distilled facts to Merkle Forest before flush" target:self action:@selector(saveSettings)];
-    self.preCompactDumpCheck.frame = NSMakeRect(labelW + 30, y - 4, 460, 24);
-    self.preCompactDumpCheck.state = NSControlStateValueOn;
-    [box.contentView addSubview:self.preCompactDumpCheck];
-
-    // 7. Tool Output Truncation Limit
-    y -= 36;
-    [self addSettingLabel:@"Tool Output Fat Trimming" y:y container:box.contentView width:labelW];
-    self.toolOutputLimitPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(labelW + 30, y - 4, fieldW, 26) pullsDown:NO];
-    [self.toolOutputLimitPopup addItemsWithTitles:@[@"1 KB (Optimal Token Efficiency)", @"512 bytes", @"2 KB", @"4 KB"]];
-    [box.contentView addSubview:self.toolOutputLimitPopup];
-
-    // 8. Output Verbosity
-    y -= 36;
-    [self addSettingLabel:@"Output Verbosity" y:y container:box.contentView width:labelW];
-    self.verbosityPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(labelW + 30, y - 4, fieldW, 26) pullsDown:NO];
-    [self.verbosityPopup addItemsWithTitles:@[@"quiet (Clean Response Stream)", @"normal", @"full_transcript (Include Engram Hashes)"]];
-    [box.contentView addSubview:self.verbosityPopup];
-
-    // 9. API Keys Section
+    // API Keys
     y -= 44;
-    NSTextField *authHeader = [[NSTextField alloc] initWithFrame:NSMakeRect(24, y, frame.size.width - 48, 20)];
-    authHeader.stringValue = @"AI PROVIDER AUTHENTICATION VAULT";
-    authHeader.font = [NSFont boldSystemFontOfSize:11];
-    authHeader.textColor = aquaColor;
-    authHeader.bezeled = NO;
-    authHeader.drawsBackground = NO;
-    authHeader.editable = NO;
-    [box.contentView addSubview:authHeader];
+    NSTextField *authHdr = [[NSTextField alloc] initWithFrame:NSMakeRect(20, y, 300, 20)];
+    authHdr.stringValue = @"AI PROVIDER CREDENTIALS";
+    authHdr.font = [self monoFont:11 bold:YES];
+    authHdr.textColor = [self aquamarineAccent];
+    authHdr.bezeled = NO;
+    authHdr.drawsBackground = NO;
+    authHdr.editable = NO;
+    [box.contentView addSubview:authHdr];
 
     y -= 32;
-    [self addSettingLabel:@"Groq API Key" y:y container:box.contentView width:labelW];
-    self.groqKeyField = [[NSTextField alloc] initWithFrame:NSMakeRect(labelW + 30, y - 4, fieldW, 24)];
-    self.groqKeyField.placeholderString = @"gsk_...";
-    [box.contentView addSubview:self.groqKeyField];
+    [self addSettingRow:@"Groq API Key" y:y container:box.contentView labelW:labelW];
+    self.groqKeyInput = [[NSTextField alloc] initWithFrame:NSMakeRect(labelW + 20, y - 4, fieldW, 24)];
+    self.groqKeyInput.placeholderString = @"gsk_...";
+    self.groqKeyInput.font = [self monoFont:11 bold:NO];
+    [box.contentView addSubview:self.groqKeyInput];
 
     y -= 32;
-    [self addSettingLabel:@"OpenRouter Key" y:y container:box.contentView width:labelW];
-    self.openrouterKeyField = [[NSTextField alloc] initWithFrame:NSMakeRect(labelW + 30, y - 4, fieldW, 24)];
-    self.openrouterKeyField.placeholderString = @"sk-or-v1-...";
-    [box.contentView addSubview:self.openrouterKeyField];
+    [self addSettingRow:@"OpenRouter Key" y:y container:box.contentView labelW:labelW];
+    self.openrouterKeyInput = [[NSTextField alloc] initWithFrame:NSMakeRect(labelW + 20, y - 4, fieldW, 24)];
+    self.openrouterKeyInput.placeholderString = @"sk-or-v1-...";
+    self.openrouterKeyInput.font = [self monoFont:11 bold:NO];
+    [box.contentView addSubview:self.openrouterKeyInput];
 
     // Save Button
-    y -= 40;
-    NSButton *saveBtn = [[NSButton alloc] initWithFrame:NSMakeRect(labelW + 30, y, 160, 32)];
-    saveBtn.title = @"💾 Save & Apply";
+    y -= 44;
+    NSButton *saveBtn = [[NSButton alloc] initWithFrame:NSMakeRect(labelW + 20, y, 160, 32)];
+    saveBtn.title = @"💾 Apply Settings";
+    saveBtn.font = [self monoFont:11 bold:YES];
     saveBtn.bezelStyle = NSBezelStyleRounded;
-    saveBtn.contentTintColor = aquaColor;
+    saveBtn.contentTintColor = [self bloodstoneOrange];
     saveBtn.target = self;
-    saveBtn.action = @selector(saveSettings);
+    saveBtn.action = @selector(saveSettingsToDisk);
     [box.contentView addSubview:saveBtn];
-    [self loadSettings];
 }
 
-- (IBAction)deleteSelectedSession:(id)sender {
-    NSInteger row = self.conversationsTable.selectedRow;
-    if (row >= 0 && row < self.conversationsList.count) {
-        [self.conversationsList removeObjectAtIndex:row];
-        [self.conversationsTable reloadData];
-        [self appendSystemMessage:@"✔ Selected conversation session deleted.\n\n"];
-    } else if (self.conversationsList.count > 0) {
-        [self.conversationsList removeLastObject];
-        [self.conversationsTable reloadData];
-        [self appendSystemMessage:@"✔ Latest conversation session deleted.\n\n"];
-    }
-}
-
-- (IBAction)clearAllSessions:(id)sender {
-    [self.conversationsList removeAllObjects];
-    [self.conversationsTable reloadData];
-    [self appendSystemMessage:@"✔ All conversation sessions cleared from Sense Archives.\n\n"];
-}
-
-- (void)loadSettings {
-    NSString *home = NSHomeDirectory();
-    NSString *cfgPath = [NSString stringWithFormat:@"%@/.ziggy/config.json", home];
-    NSData *data = [NSData dataWithContentsOfFile:cfgPath];
-    if (data) {
-        NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-        if (dict) {
-            NSString *verbosity = dict[@"verbosity"];
-            if ([verbosity isEqualToString:@"normal"]) [self.verbosityPopup selectItemAtIndex:1];
-            else if ([verbosity isEqualToString:@"full_transcript"]) [self.verbosityPopup selectItemAtIndex:2];
-            else [self.verbosityPopup selectItemAtIndex:0];
-
-            NSString *thinking = dict[@"thinking_effort"];
-            if ([thinking isEqualToString:@"low"]) [self.thinkingEffortPopup selectItemAtIndex:0];
-            else if ([thinking isEqualToString:@"medium"]) [self.thinkingEffortPopup selectItemAtIndex:1];
-            else if ([thinking isEqualToString:@"high"]) [self.thinkingEffortPopup selectItemAtIndex:2];
-            else [self.thinkingEffortPopup selectItemAtIndex:3];
-
-            NSNumber *unbounded = dict[@"unbounded_autonomy"];
-            if (unbounded) {
-                self.unboundedAutonomyCheck.state = [unbounded boolValue] ? NSControlStateValueOn : NSControlStateValueOff;
-            }
-        }
-    }
-}
-
-- (void)addSettingLabel:(NSString *)text y:(CGFloat)y container:(NSView *)container width:(CGFloat)width {
-    NSTextField *lbl = [[NSTextField alloc] initWithFrame:NSMakeRect(24, y, width, 20)];
-    lbl.stringValue = text;
-    lbl.font = [NSFont boldSystemFontOfSize:12];
+- (void)addSettingRow:(NSString *)title y:(CGFloat)y container:(NSView *)container labelW:(CGFloat)labelW {
+    NSTextField *lbl = [[NSTextField alloc] initWithFrame:NSMakeRect(20, y, labelW, 20)];
+    lbl.stringValue = title;
+    lbl.font = [self monoFont:11 bold:YES];
     lbl.textColor = [NSColor whiteColor];
     lbl.bezeled = NO;
     lbl.drawsBackground = NO;
@@ -594,196 +794,81 @@
     [container addSubview:lbl];
 }
 
-- (void)saveSettings {
-    NSString *home = NSHomeDirectory();
-    NSString *cfgPath = [NSString stringWithFormat:@"%@/.ziggy/config.json", home];
-    [[NSFileManager defaultManager] createDirectoryAtPath:[NSString stringWithFormat:@"%@/.ziggy", home] withIntermediateDirectories:YES attributes:nil error:nil];
+#pragma mark - Dock Tab Switching
 
-    NSString *verbosity = (self.verbosityPopup.indexOfSelectedItem == 0) ? @"quiet" : ((self.verbosityPopup.indexOfSelectedItem == 1) ? @"normal" : @"full_transcript");
-    NSString *thinking = (self.thinkingEffortPopup.indexOfSelectedItem == 0) ? @"low" : ((self.thinkingEffortPopup.indexOfSelectedItem == 1) ? @"medium" : ((self.thinkingEffortPopup.indexOfSelectedItem == 2) ? @"high" : @"max"));
-    NSString *strategy = (self.contextStrategyPopup.indexOfSelectedItem == 0) ? @"hierarchical_engrams" : ((self.contextStrategyPopup.indexOfSelectedItem == 1) ? @"rolling_window" : @"full_replay");
-    BOOL unbounded = (self.unboundedAutonomyCheck.state == NSControlStateValueOn);
-    BOOL preCompact = (self.preCompactDumpCheck.state == NSControlStateValueOn);
+- (void)dockTabChanged:(NSSegmentedControl *)sender {
+    [self.previewContainer setHidden:(sender.selectedSegment != 0)];
+    [self.browserContainer setHidden:(sender.selectedSegment != 1)];
+    [self.terminalContainer setHidden:(sender.selectedSegment != 2)];
+    [self.settingsContainer setHidden:(sender.selectedSegment != 3)];
+}
 
-    NSDictionary *cfgDict = @{
-        @"verbosity": verbosity,
-        @"thinking_effort": thinking,
-        @"context_strategy": strategy,
-        @"unbounded_autonomy": @(unbounded),
-        @"pre_compact_dump": @(preCompact),
-        @"stream_output": @(YES),
-        @"sandbox_enabled": @(YES),
-        @"max_steps": @(15),
-        @"auto_compact_threshold_pct": @(75),
-        @"active_agent_profile": @"default"
-    };
+- (void)toggleSidebar {
+    self.isSidebarVisible = !self.isSidebarVisible;
+    [self.sidebarView setHidden:!self.isSidebarVisible];
+}
 
-    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:cfgDict options:NSJSONWritingPrettyPrinted error:nil];
-    if (jsonData) {
-        [jsonData writeToFile:cfgPath atomically:YES];
+#pragma mark - File Preview & Saving
+
+- (void)loadInitialWorkspacePreview {
+    NSString *pwd = [[[NSProcessInfo processInfo] environment] objectForKey:@"PWD"] ?: [[NSFileManager defaultManager] currentDirectoryPath];
+    NSString *mainZig = [NSString stringWithFormat:@"%@/ziggy/src/main.zig", pwd];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:mainZig]) {
+        mainZig = [NSString stringWithFormat:@"%@/src/main.zig", pwd];
     }
-
-    NSString *groqKey = [self.groqKeyField.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    NSString *orKey = [self.openrouterKeyField.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if (groqKey.length > 0 || orKey.length > 0) {
-        NSString *keysPath = [NSString stringWithFormat:@"%@/.ziggy/keys.env", home];
-        NSString *keysContent = [NSString stringWithFormat:@"GROQ_API_KEY=%@\nOPENROUTER_API_KEY=%@\n", groqKey, orKey];
-        [keysContent writeToFile:keysPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:mainZig]) {
+        [self loadFileIntoPreview:mainZig];
     }
-
-    // Update labels
-    self.modelBadge.stringValue = [self.modelSelectPopup.selectedItem.title componentsSeparatedByString:@" "].firstObject;
-    self.reasoningBadge.stringValue = [NSString stringWithFormat:@"Reasoning: %@ • %@",
-        [self.thinkingEffortPopup.selectedItem.title componentsSeparatedByString:@" "].firstObject,
-        unbounded ? @"⚡ UNBOUNDED" : @"Bounded"];
-
-    [self appendSystemMessage:@"✔ Preferences successfully saved to ~/.ziggy/config.json and applied to runtime.\n\n"];
 }
 
-#pragma mark - Doctor & Toolchains Screen Setup
-
-- (void)setupDoctorView:(NSRect)frame panelBg:(NSColor *)panelBg borderColor:(NSColor *)borderColor aquaColor:(NSColor *)aquaColor {
-    self.doctorContainerView = [[NSView alloc] initWithFrame:frame];
-    self.doctorContainerView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    [self.vibrancyView addSubview:self.doctorContainerView];
-
-    NSBox *box = [[NSBox alloc] initWithFrame:self.doctorContainerView.bounds];
-    box.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    box.boxType = NSBoxCustom;
-    box.fillColor = panelBg;
-    box.borderColor = borderColor;
-    box.borderWidth = 1.0;
-    box.cornerRadius = 14.0;
-    [self.doctorContainerView addSubview:box];
-
-    NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(24, frame.size.height - 46, frame.size.width - 48, 26)];
-    title.stringValue = @"🩺 TOOLCHAIN & SYSTEM HEALTH DIAGNOSTICS (/doctor)";
-    title.font = [NSFont boldSystemFontOfSize:15];
-    title.textColor = aquaColor;
-    title.bezeled = NO;
-    title.drawsBackground = NO;
-    title.editable = NO;
-    [box.contentView addSubview:title];
-
-    NSButton *recheckBtn = [[NSButton alloc] initWithFrame:NSMakeRect(frame.size.width - 150, frame.size.height - 48, 130, 30)];
-    recheckBtn.title = @"🔄 Run Audit";
-    recheckBtn.bezelStyle = NSBezelStyleRounded;
-    recheckBtn.contentTintColor = aquaColor;
-    recheckBtn.target = self;
-    recheckBtn.action = @selector(runDoctorAudit);
-    [box.contentView addSubview:recheckBtn];
-
-    NSRect scrollRect = NSMakeRect(24, 24, frame.size.width - 48, frame.size.height - 84);
-    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:scrollRect];
-    scroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    scroll.hasVerticalScroller = YES;
-
-    self.doctorTextView = [[NSTextView alloc] initWithFrame:scroll.bounds];
-    self.doctorTextView.backgroundColor = [NSColor colorWithCalibratedRed:0.03 green:0.04 blue:0.06 alpha:0.95];
-    self.doctorTextView.font = [NSFont fontWithName:@"Menlo" size:12] ?: [NSFont systemFontOfSize:12];
-    self.doctorTextView.editable = NO;
-    self.doctorTextView.textContainerInset = NSMakeSize(14, 14);
-
-    scroll.documentView = self.doctorTextView;
-    [box.contentView addSubview:scroll];
-}
-
-- (void)runDoctorAudit {
-    NSString *auditReport = @"=== ZIGAGENT TOOLCHAIN & SUBSYSTEM AUDIT ===\n\n"
-    @"  • Zig Compiler:      ✔ INSTALLED (0.16.0-dev.2227+25f0ad9)\n"
-    @"  • Git VCS Engine:    ✔ INSTALLED (git version 2.39.5)\n"
-    @"  • cURL HTTP Client:  ✔ INSTALLED (curl 8.7.1 - SecureTransport zlib)\n"
-    @"  • Bun JS Runtime:    ✔ INSTALLED (1.3.1 - Native High Speed)\n"
-    @"  • Python3 Runtime:   ✔ INSTALLED (Python 3.12.9 via ~/.uv-global)\n"
-    @"  • Rust Toolchain:    ✔ INSTALLED (rustc 1.86.0-nightly)\n"
-    @"  • Clang / LLVM:      ✔ INSTALLED (Apple clang version 16.0.0)\n\n"
-    @"=== COGNITIVE & INVARIANT SUBSYSTEMS ===\n"
-    @"  • Thermodynamic Memory: ✔ Operational (L1 Hot Ring + Merkle DAG)\n"
-    @"  • OmniLattice Mesh:     ✔ Connected (Node: proj_c377995bc0bb459628f6d6cbdd458073)\n"
-    @"  • AST Syntax Guard:     ✔ Delimiters & Balanced Grammar Guard Active\n"
-    @"  • Causal Provenance:    ✔ DAG Trace Graph Ready\n\n"
-    @"All toolchains verified. Ziggy is fully operational with complete native autonomy.\n";
-
-    self.doctorTextView.string = auditReport;
-    self.doctorTextView.textColor = [NSColor colorWithCalibratedRed:0.19 green:0.77 blue:0.55 alpha:1.0];
-}
-
-#pragma mark - Table View Data Source
-
-- (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView {
-    return self.conversationsList.count;
-}
-
-- (NSView *)tableView:(NSTableView *)tableView viewForTableColumn:(NSTableColumn *)tableColumn row:(NSInteger)row {
-    NSDictionary *item = self.conversationsList[row];
-    NSTableCellView *cell = [tableView makeViewWithIdentifier:@"SessionCell" owner:self];
-    if (!cell) {
-        cell = [[NSTableCellView alloc] initWithFrame:NSMakeRect(0, 0, tableColumn.width, 50)];
-        cell.identifier = @"SessionCell";
-
-        NSTextField *titleLbl = [[NSTextField alloc] initWithFrame:NSMakeRect(10, 24, tableColumn.width - 20, 20)];
-        titleLbl.tag = 101;
-        titleLbl.font = [NSFont boldSystemFontOfSize:13];
-        titleLbl.textColor = [NSColor whiteColor];
-        titleLbl.bezeled = NO;
-        titleLbl.drawsBackground = NO;
-        titleLbl.editable = NO;
-        [cell addSubview:titleLbl];
-
-        NSTextField *subLbl = [[NSTextField alloc] initWithFrame:NSMakeRect(10, 4, tableColumn.width - 20, 18)];
-        subLbl.tag = 102;
-        subLbl.font = [NSFont fontWithName:@"Menlo" size:11] ?: [NSFont systemFontOfSize:11];
-        subLbl.textColor = [NSColor colorWithCalibratedWhite:0.6 alpha:1.0];
-        subLbl.bezeled = NO;
-        subLbl.drawsBackground = NO;
-        subLbl.editable = NO;
-        [cell addSubview:subLbl];
+- (void)loadFileIntoPreview:(NSString *)filePath {
+    self.currentLoadedFilePath = filePath;
+    self.currentPreviewFilePathField.stringValue = [filePath lastPathComponent];
+    NSError *err = nil;
+    NSString *content = [NSString stringWithContentsOfFile:filePath encoding:NSUTF8StringEncoding error:&err];
+    if (content) {
+        self.codeEditorTextView.string = content;
+        if (self.previewModeToggle.selectedSegment == 1) {
+            [self renderCodeToHtmlView:content filePath:filePath];
+        }
     }
-
-    NSTextField *t = [cell viewWithTag:101];
-    NSTextField *s = [cell viewWithTag:102];
-    t.stringValue = item[@"title"];
-    s.stringValue = [NSString stringWithFormat:@"%@ • %@ • %@", item[@"date"], item[@"tokens"], item[@"engrams"]];
-
-    return cell;
 }
 
-- (CGFloat)tableView:(NSTableView *)tableView heightOfRow:(NSInteger)row {
-    return 52.0;
+- (void)openCustomFilePath {
+    NSString *path = [self.currentPreviewFilePathField.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        [self loadFileIntoPreview:path];
+    }
 }
 
-- (void)startNewSession:(id)sender {
-    [self.conversationsList insertObject:@{
-        @"title": [NSString stringWithFormat:@"Session #%lu: New Autonomous Task", self.conversationsList.count + 1],
-        @"date": @"Just now",
-        @"tokens": @"0 tokens",
-        @"engrams": @"0 engrams"
-    } atIndex:0];
-    [self.conversationsTable reloadData];
-    self.navControl.selectedSegment = 0;
-    [self navigationChanged:self.navControl];
-    self.chatTextView.string = @"";
-    [self appendSystemMessage:@"⚡ NEW CONVERSATION SESSION INITIALIZED\n• Model: openai/gpt-oss-120b\n• Memory Forest: Ready\n\n"];
+- (void)saveCurrentPreviewFile {
+    if (self.currentLoadedFilePath.length > 0) {
+        NSError *err = nil;
+        [self.codeEditorTextView.string writeToFile:self.currentLoadedFilePath atomically:YES encoding:NSUTF8StringEncoding error:&err];
+        if (!err) {
+            [self appendSignalMessage:[NSString stringWithFormat:@"✔ Saved changes to: %@", [self.currentLoadedFilePath lastPathComponent]] type:@"tool"];
+        }
+    }
 }
 
-#pragma mark - Chat & Execution Engine
+#pragma mark - Chat Dispatch & Signal Formatting
 
-- (void)sendMessage:(id)sender {
-    NSString *userText = [self.goalTextField.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if (userText.length == 0) return;
+- (void)sendCurrentMessage {
+    NSString *text = [self.chatInputField.stringValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (text.length == 0) return;
+    self.chatInputField.stringValue = @"";
 
-    [self appendUserMessage:userText];
-    self.goalTextField.stringValue = @"";
+    [self appendSignalMessage:text type:@"user"];
 
-    // Direct Shell Command (!<cmd>)
-    if ([userText hasPrefix:@"!"]) {
-        NSString *shellCmd = [[userText substringFromIndex:1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        [self appendAgentToolAction:@"shell" detail:shellCmd];
+    // Direct Shell Pass-through
+    if ([text hasPrefix:@"!"]) {
+        NSString *cmd = [[text substringFromIndex:1] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        [self appendSignalMessage:[NSString stringWithFormat:@"⚡ Executing: %@", cmd] type:@"tool"];
 
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             NSTask *task = [[NSTask alloc] init];
             task.launchPath = @"/bin/zsh";
-            task.arguments = @[@"-c", shellCmd];
+            task.arguments = @[@"-c", cmd];
             NSPipe *pipe = [NSPipe pipe];
             task.standardOutput = pipe;
             task.standardError = pipe;
@@ -793,35 +878,19 @@
             NSString *outStr = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
 
             dispatch_async(dispatch_get_main_queue(), ^{
-                [self appendToolOutput:outStr];
+                [self appendSignalMessage:outStr type:@"tool_output"];
             });
         });
         return;
     }
 
-    // Slash Command (/commands, /doctor, /settings, /omni, etc.)
-    if ([userText hasPrefix:@"/"]) {
-        if ([userText isEqualToString:@"/doctor"]) {
-            self.navControl.selectedSegment = 3;
-            [self navigationChanged:self.navControl];
-            return;
-        } else if ([userText isEqualToString:@"/settings"] || [userText isEqualToString:@"/config"]) {
-            self.navControl.selectedSegment = 2;
-            [self navigationChanged:self.navControl];
-            return;
-        } else if ([userText isEqualToString:@"/clear"]) {
-            self.chatTextView.string = @"";
-            return;
-        }
-    }
-
-    // Dispatch to Native ZigAgent Engine
-    self.statusHeader.stringValue = @"⚡ Ziggy Deliberating & Executing Autonomous Actions...";
-    self.sendButton.enabled = NO;
+    // Agent Autonomous Dispatch
+    self.sendActionButton.enabled = NO;
+    self.topStatusBadge.stringValue = @"⚡ Ziggy Deliberating & Executing Actions...";
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSTask *task = [[NSTask alloc] init];
-        self.activeTask = task;
+        self.currentAgentTask = task;
 
         NSString *home = NSHomeDirectory();
         NSString *ziggyBin = [NSString stringWithFormat:@"%@/.local/bin/ziggy", home];
@@ -830,173 +899,194 @@
         }
 
         task.launchPath = @"/bin/zsh";
-        NSString *fullCmd = [NSString stringWithFormat:@"printf \"%%s\\n/exit\\n\" \"%@\" | %@", [userText stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""], ziggyBin];
-        task.arguments = @[@"-c", fullCmd];
+        NSString *escaped = [text stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+        task.arguments = @[@"-c", [NSString stringWithFormat:@"printf \"%%s\\n/exit\\n\" \"%@\" | %@", escaped, ziggyBin]];
 
         NSPipe *pipe = [NSPipe pipe];
         task.standardOutput = pipe;
         task.standardError = pipe;
         [task launch];
-
-        NSFileHandle *readHandle = [pipe fileHandleForReading];
-        NSData *data = [readHandle readDataToEndOfFile];
+        NSData *data = [[pipe fileHandleForReading] readDataToEndOfFile];
         [task waitUntilExit];
 
         NSString *rawOutput = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
-        self.activeTask = nil;
+        self.currentAgentTask = nil;
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            self.sendButton.enabled = YES;
-            self.statusHeader.stringValue = @"┌─ [Workspace: ~/LocalBuilds/ZigAgent] ── [Model: openai/gpt-oss-120b] ── [Reasoning: max] ── [⚡ UNBOUNDED]";
-
-            [self parseAndRenderZiggyStream:rawOutput];
+            self.sendActionButton.enabled = YES;
+            self.topStatusBadge.stringValue = [NSString stringWithFormat:@"Model: %@ • 🧠 max • Context: 1%%", self.activeModelName];
+            [self filterAndRenderSignalOutput:rawOutput];
         });
     });
 }
 
-- (void)parseAndRenderZiggyStream:(NSString *)output {
-    // Extract Thinking block
-    NSRange thinkStart = [output rangeOfString:@"💭 Thinking:"];
-    if (thinkStart.location != NSNotFound) {
-        NSString *sub = [output substringFromIndex:thinkStart.location + 12];
-        NSRange actionRange = [sub rangeOfString:@"⚡ Action:"];
-        NSRange outputEnd = (actionRange.location != NSNotFound) ? actionRange : NSMakeRange(sub.length, 0);
-        NSString *thinkText = [sub substringToIndex:outputEnd.location];
-        [self appendAgentThought:[thinkText stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]];
-    }
+- (void)filterAndRenderSignalOutput:(NSString *)raw {
+    // Strip metadata bloat, keep pure thoughts and clean answers
+    NSArray *lines = [raw componentsSeparatedByString:@"\n"];
+    NSMutableString *cleanResponse = [NSMutableString string];
+    BOOL inHeader = YES;
 
-    // Extract Tool Actions
-    NSRange actionStart = [output rangeOfString:@"⚡ Action:"];
-    if (actionStart.location != NSNotFound) {
-        NSString *sub = [output substringFromIndex:actionStart.location + 9];
-        NSRange outHeader = [sub rangeOfString:@"┌─ Output:"];
-        if (outHeader.location != NSNotFound) {
-            NSString *toolJson = [sub substringToIndex:outHeader.location];
-            [self appendAgentToolAction:@"tool_dispatch" detail:[toolJson stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]];
-
-            NSString *outSub = [sub substringFromIndex:outHeader.location + 10];
-            NSRange outEnd = [outSub rangeOfString:@"└────────"];
-            if (outEnd.location != NSNotFound) {
-                NSString *toolResult = [outSub substringToIndex:outEnd.location];
-                [self appendToolOutput:toolResult];
-            }
-        }
-    }
-
-    // Extract Final Response
-    NSArray *lines = [output componentsSeparatedByString:@"\n"];
-    NSMutableString *finalResp = [NSMutableString string];
-    BOOL capture = NO;
-
-    for (NSString *l in lines) {
-        if ([l containsString:@"└────────"] || [l containsString:@"💭 Thinking:"]) {
-            capture = YES;
+    for (NSString *line in lines) {
+        if ([line containsString:@"⚡ ZIGAGENT CLI"] || [line containsString:@"Active Provider:"] || [line containsString:@"Agent ID:"] || [line containsString:@"────────────"]) {
             continue;
         }
-        if ([l containsString:@"┌─ [Workspace:"] || [l containsString:@"└─ Context Window:"] || [l containsString:@"⚡ ZIGAGENT CLI"]) {
-            capture = NO;
+        if ([line hasPrefix:@">   "]) {
+            inHeader = NO;
             continue;
         }
-        if (capture && ![l containsString:@"⚡ [LIVE STEERING"]) {
-            [finalResp appendFormat:@"%@\n", l];
+        if ([line containsString:@"Context:"] && [line containsString:@"openai/"]) {
+            continue;
+        }
+        if (line.length > 0) {
+            [cleanResponse appendFormat:@"%@\n", line];
         }
     }
 
-    NSString *cleanResp = [finalResp stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if (cleanResp.length > 0) {
-        [self appendAgentResponse:cleanResp];
+    if (cleanResponse.length > 0) {
+        [self appendSignalMessage:cleanResponse type:@"agent"];
+    }
+}
+
+- (void)appendSignalMessage:(NSString *)text type:(NSString *)type {
+    NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
+    style.lineSpacing = 3.0;
+
+    NSColor *fgColor = [NSColor whiteColor];
+    NSString *prefix = @"";
+
+    if ([type isEqualToString:@"user"]) {
+        fgColor = [NSColor colorWithCalibratedRed:0.00 green:0.95 blue:1.00 alpha:1.0];
+        prefix = @"\n╭─ USER ──────────────────────────────────────────────────────────\n│ ";
+    } else if ([type isEqualToString:@"agent"]) {
+        fgColor = [NSColor colorWithCalibratedWhite:0.92 alpha:1.0];
+        prefix = @"\n╭─ ZIGGY ─────────────────────────────────────────────────────────\n";
+    } else if ([type isEqualToString:@"tool"]) {
+        fgColor = [self aquamarineAccent];
+        prefix = @"\n⚡ [ACTION] ";
+    } else if ([type isEqualToString:@"tool_output"]) {
+        fgColor = [NSColor colorWithCalibratedWhite:0.75 alpha:1.0];
+        prefix = @"";
     } else {
-        // Fallback: append raw output if parsing was minimal
-        if (thinkStart.location == NSNotFound && actionStart.location == NSNotFound) {
-            [self appendAgentResponse:[output stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]];
+        fgColor = [self bloodstoneOrange];
+        prefix = @"\n";
+    }
+
+    NSString *formatted = [NSString stringWithFormat:@"%@%@\n", prefix, text];
+    NSAttributedString *attr = [[NSAttributedString alloc] initWithString:formatted attributes:@{
+        NSForegroundColorAttributeName: fgColor,
+        NSFontAttributeName: [self monoFont:12 bold:[type isEqualToString:@"user"]],
+        NSParagraphStyleAttributeName: style
+    }];
+
+    [self.chatLogTextView.textStorage appendAttributedString:attr];
+    [self.chatLogTextView scrollRangeToVisible:NSMakeRange(self.chatLogTextView.string.length, 0)];
+}
+
+#pragma mark - Settings Persistence
+
+- (void)loadSettingsFromDisk {
+    NSString *home = NSHomeDirectory();
+    NSString *cfgPath = [NSString stringWithFormat:@"%@/.ziggy/config.json", home];
+    NSData *data = [NSData dataWithContentsOfFile:cfgPath];
+    if (data) {
+        NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        if (dict) {
+            NSNumber *unb = dict[@"unbounded_autonomy"];
+            if (unb) self.unboundedCheck.state = [unb boolValue] ? NSControlStateValueOn : NSControlStateValueOff;
         }
     }
-
-    // Update Context Progress Indicator
-    self.contextProgressBar.doubleValue = MIN(100.0, self.contextProgressBar.doubleValue + 2.5);
-    self.contextBarLabel.stringValue = [NSString stringWithFormat:@"%.0f%% (%.1fk / 128k tokens)", self.contextProgressBar.doubleValue, (self.contextProgressBar.doubleValue * 1280.0) / 1000.0];
 }
 
-- (void)interruptExecution:(id)sender {
-    if (self.activeTask) {
-        [self.activeTask terminate];
-        self.activeTask = nil;
-        self.sendButton.enabled = YES;
-        self.statusHeader.stringValue = @"┌─ [Workspace: ~/LocalBuilds/ZigAgent] ── [⚡ Interrupted via ESC]";
-        [self appendSystemMessage:@"\n⚡ [INTERRUPT] Autonomous execution halted. State preserved in Merkle DAG.\n\n"];
+- (void)saveSettingsToDisk {
+    NSString *home = NSHomeDirectory();
+    NSString *cfgPath = [NSString stringWithFormat:@"%@/.ziggy/config.json", home];
+    [[NSFileManager defaultManager] createDirectoryAtPath:[NSString stringWithFormat:@"%@/.ziggy", home] withIntermediateDirectories:YES attributes:nil error:nil];
+
+    NSDictionary *cfgDict = @{
+        @"unbounded_autonomy": @(self.unboundedCheck.state == NSControlStateValueOn),
+        @"thinking_effort": @"max",
+        @"verbosity": @"normal",
+        @"active_agent_profile": @"default"
+    };
+    NSData *data = [NSJSONSerialization dataWithJSONObject:cfgDict options:NSJSONWritingPrettyPrinted error:nil];
+    if (data) [data writeToFile:cfgPath atomically:YES];
+
+    NSString *selectedModel = [self.modelPopup.selectedItem.title componentsSeparatedByString:@" "].firstObject;
+    self.activeModelName = selectedModel;
+    self.topStatusBadge.stringValue = [NSString stringWithFormat:@"Model: %@ • 🧠 max • Context: 1%%", selectedModel];
+
+    [self appendSignalMessage:@"✔ Settings successfully applied and persisted to ~/.ziggy/config.json\n" type:@"tool"];
+}
+
+#pragma mark - Sessions Table View Data Source
+
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView {
+    return self.sessionsList.count;
+}
+
+- (NSView *)tableView:(NSTableView *)tableView viewForTableColumn:(NSTableColumn *)tableColumn row:(NSInteger)row {
+    NSDictionary *item = self.sessionsList[row];
+    NSTableCellView *cell = [tableView makeViewWithIdentifier:@"SessionCell" owner:self];
+    if (!cell) {
+        cell = [[NSTableCellView alloc] initWithFrame:NSMakeRect(0, 0, tableColumn.width, 44)];
+        cell.identifier = @"SessionCell";
+
+        NSTextField *titleLbl = [[NSTextField alloc] initWithFrame:NSMakeRect(6, 20, tableColumn.width - 12, 18)];
+        titleLbl.tag = 201;
+        titleLbl.font = [self monoFont:11 bold:YES];
+        titleLbl.textColor = [NSColor whiteColor];
+        titleLbl.bezeled = NO;
+        titleLbl.drawsBackground = NO;
+        titleLbl.editable = NO;
+        [cell addSubview:titleLbl];
+
+        NSTextField *timeLbl = [[NSTextField alloc] initWithFrame:NSMakeRect(6, 4, tableColumn.width - 12, 16)];
+        timeLbl.tag = 202;
+        timeLbl.font = [self monoFont:9 bold:NO];
+        timeLbl.textColor = [NSColor colorWithCalibratedWhite:0.55 alpha:1.0];
+        timeLbl.bezeled = NO;
+        timeLbl.drawsBackground = NO;
+        timeLbl.editable = NO;
+        [cell addSubview:timeLbl];
+    }
+
+    NSTextField *t = [cell viewWithTag:201];
+    NSTextField *s = [cell viewWithTag:202];
+    t.stringValue = item[@"title"];
+    s.stringValue = item[@"time"];
+
+    return cell;
+}
+
+- (CGFloat)tableView:(NSTableView *)tableView heightOfRow:(NSInteger)row {
+    return 46.0;
+}
+
+- (void)startNewSession {
+    [self.sessionsList insertObject:@{
+        @"title": [NSString stringWithFormat:@"Session #%lu: Autonomous Goal", self.sessionsList.count + 1],
+        @"time": @"Just now",
+        @"id": [NSString stringWithFormat:@"ses_%lu", self.sessionsList.count + 100]
+    } atIndex:0];
+    [self.sessionsTableView reloadData];
+    self.chatLogTextView.string = @"";
+    [self appendSignalMessage:@"⚡ NEW AUTONOMOUS SESSION STARTED\n• Context memory initialized.\n\n" type:@"system"];
+}
+
+- (void)deleteSelectedSession {
+    NSInteger row = self.sessionsTableView.selectedRow;
+    if (row >= 0 && row < self.sessionsList.count) {
+        [self.sessionsList removeObjectAtIndex:row];
+        [self.sessionsTableView reloadData];
+    } else if (self.sessionsList.count > 0) {
+        [self.sessionsList removeLastObject];
+        [self.sessionsTableView reloadData];
     }
 }
 
-#pragma mark - Attributed Text Rendering
-
-- (void)appendUserMessage:(NSString *)text {
-    NSMutableAttributedString *str = [[NSMutableAttributedString alloc] initWithString:[NSString stringWithFormat:@"\n👤 YOU:\n%@\n\n", text]];
-    NSRange headerRange = NSMakeRange(1, 6);
-    NSRange bodyRange = NSMakeRange(8, text.length);
-
-    [str addAttribute:NSForegroundColorAttributeName value:[NSColor colorWithCalibratedRed:0.33 green:0.71 blue:1.00 alpha:1.0] range:headerRange];
-    [str addAttribute:NSFontAttributeName value:[NSFont boldSystemFontOfSize:12] range:headerRange];
-
-    [str addAttribute:NSForegroundColorAttributeName value:[NSColor whiteColor] range:bodyRange];
-    [str addAttribute:NSFontAttributeName value:[NSFont systemFontOfSize:14] range:bodyRange];
-
-    [[self.chatTextView textStorage] appendAttributedString:str];
-    [self scrollToBottom];
-}
-
-- (void)appendAgentThought:(NSString *)thought {
-    NSMutableAttributedString *str = [[NSMutableAttributedString alloc] initWithString:[NSString stringWithFormat:@"💭 Thinking:\n%@\n\n", thought]];
-    [str addAttribute:NSForegroundColorAttributeName value:[NSColor colorWithCalibratedRed:0.55 green:0.65 blue:0.75 alpha:1.0] range:NSMakeRange(0, str.length)];
-    [str addAttribute:NSFontAttributeName value:[NSFont fontWithName:@"Menlo" size:12] ?: [NSFont systemFontOfSize:12] range:NSMakeRange(0, str.length)];
-    [[self.chatTextView textStorage] appendAttributedString:str];
-    [self scrollToBottom];
-}
-
-- (void)appendAgentToolAction:(NSString *)tool detail:(NSString *)detail {
-    NSMutableAttributedString *str = [[NSMutableAttributedString alloc] initWithString:[NSString stringWithFormat:@"⚡ Action [%@]: %@\n", tool, detail]];
-    [str addAttribute:NSForegroundColorAttributeName value:[NSColor colorWithCalibratedRed:0.19 green:0.77 blue:0.55 alpha:1.0] range:NSMakeRange(0, str.length)];
-    [str addAttribute:NSFontAttributeName value:[NSFont boldSystemFontOfSize:12] range:NSMakeRange(0, str.length)];
-    [[self.chatTextView textStorage] appendAttributedString:str];
-    [self scrollToBottom];
-}
-
-- (void)appendToolOutput:(NSString *)output {
-    NSMutableAttributedString *str = [[NSMutableAttributedString alloc] initWithString:[NSString stringWithFormat:@"┌─ Output:\n%@\n└────────\n\n", output]];
-    [str addAttribute:NSForegroundColorAttributeName value:[NSColor colorWithCalibratedWhite:0.8 alpha:1.0] range:NSMakeRange(0, str.length)];
-    [str addAttribute:NSFontAttributeName value:[NSFont fontWithName:@"Menlo" size:11] ?: [NSFont systemFontOfSize:11] range:NSMakeRange(0, str.length)];
-    [[self.chatTextView textStorage] appendAttributedString:str];
-    [self scrollToBottom];
-}
-
-- (void)appendAgentResponse:(NSString *)response {
-    NSMutableAttributedString *str = [[NSMutableAttributedString alloc] initWithString:[NSString stringWithFormat:@"⚡ ZIGGY:\n%@\n\n", response]];
-    NSRange headerRange = NSMakeRange(0, 8);
-    NSRange bodyRange = NSMakeRange(9, response.length);
-
-    [str addAttribute:NSForegroundColorAttributeName value:[NSColor colorWithCalibratedRed:0.19 green:0.77 blue:0.55 alpha:1.0] range:headerRange];
-    [str addAttribute:NSFontAttributeName value:[NSFont boldSystemFontOfSize:13] range:headerRange];
-
-    [str addAttribute:NSForegroundColorAttributeName value:[NSColor colorWithCalibratedWhite:0.95 alpha:1.0] range:bodyRange];
-    [str addAttribute:NSFontAttributeName value:[NSFont systemFontOfSize:14] range:bodyRange];
-
-    [[self.chatTextView textStorage] appendAttributedString:str];
-    [self scrollToBottom];
-}
-
-- (void)appendSystemMessage:(NSString *)msg {
-    NSMutableAttributedString *str = [[NSMutableAttributedString alloc] initWithString:msg];
-    [str addAttribute:NSForegroundColorAttributeName value:[NSColor colorWithCalibratedRed:0.19 green:0.77 blue:0.55 alpha:1.0] range:NSMakeRange(0, msg.length)];
-    [str addAttribute:NSFontAttributeName value:[NSFont fontWithName:@"Menlo" size:12] ?: [NSFont systemFontOfSize:12] range:NSMakeRange(0, msg.length)];
-    [[self.chatTextView textStorage] appendAttributedString:str];
-    [self scrollToBottom];
-}
-
-- (void)scrollToBottom {
-    [self.chatTextView scrollRangeToVisible:NSMakeRange(self.chatTextView.string.length, 0)];
-}
-
-- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
-    return YES;
+- (void)clearAllSessions {
+    [self.sessionsList removeAllObjects];
+    [self.sessionsTableView reloadData];
 }
 
 @end
@@ -1004,8 +1094,7 @@
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         NSApplication *app = [NSApplication sharedApplication];
-        [app setActivationPolicy:NSApplicationActivationPolicyRegular];
-        AppDelegate *delegate = [[AppDelegate alloc] init];
+        ZigAgentApp *delegate = [[ZigAgentApp alloc] init];
         app.delegate = delegate;
         [app run];
     }

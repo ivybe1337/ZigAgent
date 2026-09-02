@@ -701,26 +701,6 @@ pub const Repl = struct {
         }
 
         while (step < max_tool_steps) : (step += 1) {
-            // Check for Escape key interrupt or live steering input
-            var steer_buf: [1024]u8 = undefined;
-            if (sys.checkEscapeOrSteering(&steer_buf)) |input_data| {
-                if (input_data.len == 1 and input_data[0] == 27) {
-                    std.debug.print("\n{s}⚡ [INTERRUPT] Autonomous execution halted via <ESC>. State preserved in Merkle DAG.{s}\n", .{ tui.TUI.C_ORANGE, tui.TUI.C_RESET });
-                    break;
-                } else if (input_data.len > 0) {
-                    const trimmed_steer = std.mem.trim(u8, input_data, " \t\r\n");
-                    if (trimmed_steer.len > 0) {
-                        std.debug.print("\n{s}⚡ [LIVE STEERING INJECTED]:{s} \"{s}\"\n", .{ tui.TUI.C_CYAN, tui.TUI.C_RESET, trimmed_steer });
-                        const steered_p = std.fmt.bufPrint(
-                            &current_prompt_buf,
-                            "{s}\n\n<user_steering>\n{s}\n</user_steering>\nPlease adjust your actions accordingly.",
-                            .{ current_prompt_buf[0..active_prompt_len], trimmed_steer },
-                        ) catch current_prompt_buf[0..active_prompt_len];
-                        active_prompt_len = steered_p.len;
-                    }
-                }
-            }
-
             var response_buf: [16384]u8 = undefined;
             const resp_len = http.HttpClient.queryInference(
                 self.allocator,
