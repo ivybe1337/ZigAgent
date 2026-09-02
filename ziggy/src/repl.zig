@@ -29,6 +29,7 @@ const self_improve = @import("self_improve.zig");
 const messaging = @import("messaging.zig");
 const ast_query = @import("ast_query.zig");
 const swarm = @import("swarm.zig");
+const model_router = @import("model_router.zig");
 
 pub const Repl = struct {
     allocator: std.mem.Allocator,
@@ -94,23 +95,13 @@ pub const Repl = struct {
     pub fn run(self: *Repl) !void {
         self.printWelcome();
 
-        var input_buf: [4096]u8 = undefined;
+        var input_buf: [8192]u8 = undefined;
         while (true) {
-            std.debug.print(
-                "\n{s}╭─ {s}Message Ziggy {s}(Type {s}/{s} for autocomplete, {s}!{s} for shell, {s}ESC{s} to pause){s} ───────────────────────╮{s}\n",
-                .{
-                    tui.TUI.C_BORDER,
-                    tui.TUI.C_WHITE,
-                    tui.TUI.C_MUTED,
-                    tui.TUI.C_AQUA, tui.TUI.C_MUTED,
-                    tui.TUI.C_ORANGE, tui.TUI.C_MUTED,
-                    tui.TUI.C_CYAN, tui.TUI.C_MUTED,
-                    tui.TUI.C_BORDER,
-                    tui.TUI.C_RESET,
-                },
-            );
+            // Render top horizontal divider (matches AgY screenshot)
+            std.debug.print("\n\x1b[38;2;75;85;99m────────────────────────────────────────────────────────────────────────────────\x1b[0m\n", .{});
 
-            const prompt_str = "\x1b[38;2;60;80;110m│ \x1b[1;38;2;0;242;254m❯\x1b[0m ";
+            // Prompt prefix (purple '>   ' matching AgY screenshot)
+            const prompt_str = "\x1b[38;2;168;85;247m>\x1b[0m   ";
 
             const line = interactive_tui.InteractiveTUI.readInputWithAutocomplete(
                 self.allocator,
@@ -119,8 +110,9 @@ pub const Repl = struct {
                 &self.history,
             ) orelse break;
 
-            std.debug.print("{s}╰─────────────────────────────────────────────────────────────────────────────╯{s}\n", .{ tui.TUI.C_BORDER, tui.TUI.C_RESET });
-            self.renderBottomHUD();
+            // Render bottom horizontal divider (matches AgY screenshot)
+            std.debug.print("\x1b[38;2;75;85;99m────────────────────────────────────────────────────────────────────────────────\x1b[0m\n", .{});
+            self.renderBottomStatus();
 
             const trimmed = std.mem.trim(u8, line, " \t\r\n");
             if (trimmed.len == 0) continue;
@@ -149,44 +141,18 @@ pub const Repl = struct {
         }
     }
 
-    fn renderBottomHUD(self: *Repl) void {
-        const cwd = sys.Sys.getenv("PWD") orelse ".";
-        const cwd_len = std.mem.sliceTo(cwd, 0).len;
-        const cwd_slice = cwd[0..cwd_len];
-
-        // Format short workspace path (~/...)
-        const home = sys.Sys.getenv("HOME") orelse "";
-        const home_len = std.mem.sliceTo(home, 0).len;
-        var display_ws_buf: [256]u8 = undefined;
-        const display_ws = if (home_len > 0 and std.mem.startsWith(u8, cwd_slice, home[0..home_len]))
-            std.fmt.bufPrint(&display_ws_buf, "~{s}", .{cwd_slice[home_len..]}) catch cwd_slice
-        else
-            cwd_slice;
-        _ = display_ws;
-
-        // Calculate Context Fill Percentage
+    fn renderBottomStatus(self: *Repl) void {
         const hot_engrams: u32 = @intCast(self.engine.memory_store.hot_count);
         const estimated_tokens: u32 = hot_engrams * 1250 + 2400;
         const max_tokens: u32 = 128000;
         const fill_pct: u32 = @min((estimated_tokens * 100) / max_tokens, 100);
 
-        var bar_buf: [15]u8 = undefined;
-        const filled_slots = (fill_pct * 15) / 100;
-        for (0..15) |idx| {
-            bar_buf[idx] = if (idx < filled_slots) '=' else '-';
-        }
-
-        const bar_color = if (fill_pct < 60) "\x1b[38;2;49;196;141m" else if (fill_pct < 85) "\x1b[38;2;255;154;60m" else "\x1b[38;2;255;70;70m";
-        const auto_label = if (self.cfg_mgr.config.unbounded_autonomy) "⚡ UNBOUNDED" else "Bounded (15 steps)";
-
         std.debug.print(
-            "  \x1b[38;2;255;107;53m⚡\x1b[0m \x1b[1;38;2;240;246;252m{s}\x1b[0m \x1b[38;2;60;80;110m│\x1b[0m \x1b[38;2;139;157;175m🧠 Reasoning:\x1b[0m \x1b[38;2;0;242;254m{s}\x1b[0m \x1b[38;2;60;80;110m│\x1b[0m \x1b[38;2;139;157;175m📊 Context:\x1b[0m {s}[{s}]\x1b[0m \x1b[1m{d}%\x1b[0m ({d}.{d}k/{d}k) \x1b[38;2;60;80;110m│\x1b[0m \x1b[38;2;0;242;254m{s}\x1b[0m\n",
+            "                                     \x1b[38;2;156;163;175m{s}\x1b[0m \x1b[38;2;107;114;128m•\x1b[0m \x1b[38;2;156;163;175m{s}\x1b[0m \x1b[38;2;107;114;128m•\x1b[0m \x1b[38;2;49;196;141mContext: {d}%\x1b[0m\n\n",
             .{
                 self.active_model,
                 self.cfg_mgr.config.thinking_effort.asString(),
-                bar_color, bar_buf[0..15], fill_pct,
-                estimated_tokens / 1000, (estimated_tokens % 1000) / 100, max_tokens / 1000,
-                auto_label,
+                fill_pct,
             },
         );
     }
@@ -652,7 +618,11 @@ pub const Repl = struct {
         }
 
         if (std.mem.eql(u8, cmd, "/models") or (std.mem.eql(u8, cmd, "/model") and arg1 == null)) {
-            models.renderModelPreviewList(self.active_model);
+            var router = model_router.ModelRouter.init(self.allocator);
+            if (router.selectModelInteractively(self.active_model)) |new_m| {
+                self.active_model = new_m;
+                std.debug.print("{s}✔ Activated Model: {s}{s}\n", .{ tui.TUI.C_AQUA, new_m, tui.TUI.C_RESET });
+            }
             return true;
         }
 
