@@ -45,7 +45,7 @@ pub const AVAILABLE_COMMANDS = [_]SlashItem{
 };
 
 pub const InteractiveTUI = struct {
-    /// Safe, clean terminal input reader without password-manager / keychain triggers
+    /// Dedicated graphical chatbox reader
     pub fn readInputWithAutocomplete(
         allocator: std.mem.Allocator,
         prompt_prefix: []const u8,
@@ -83,43 +83,55 @@ pub const InteractiveTUI = struct {
         return out_buf[0..out_len];
     }
 
-    /// Interactive TUI Settings View
+    /// Interactive TUI Settings View with Arrow Keys, j/k, and Spacebar Toggling
     pub fn runInteractiveSettings(cfg_mgr: *config.ConfigManager) void {
         var term_raw: sys.Termios = undefined;
         var term_orig: sys.Termios = undefined;
         if (sys.Sys.tcgetattr(0, &term_orig) != 0) return;
         term_raw = term_orig;
+        // Non-canonical, turn off echoing
         term_raw.c_lflag &= ~@as(c_ulong, 0x00000002 | 0x00000008);
+        term_raw.c_cc[16] = 1; // VMIN = 1
+        term_raw.c_cc[17] = 0; // VTIME = 0
         _ = sys.Sys.tcsetattr(0, 0, &term_raw);
         defer _ = sys.Sys.tcsetattr(0, 0, &term_orig);
 
         var selected: usize = 0;
-        const total_items: usize = 5;
+        const total_items: usize = 8;
 
         while (true) {
             renderSettingsScreen(cfg_mgr, selected);
 
-            var ch: [4]u8 = undefined;
-            const r = sys.Sys.read(0, @ptrCast(&ch), 4);
+            var ch: [8]u8 = undefined;
+            const r = sys.Sys.read(0, @ptrCast(&ch), 8);
             if (r <= 0) break;
 
-            if (ch[0] == 'q' or ch[0] == 'Q' or ch[0] == 27) {
+            // Handle ESC alone or 'q'
+            if (r == 1 and (ch[0] == 'q' or ch[0] == 'Q' or ch[0] == 27 or ch[0] == 'x' or ch[0] == 'X')) {
                 break;
             }
 
-            if (ch[0] == 27 and ch[1] == '[') {
-                if (ch[2] == 'A') { // UP
-                    if (selected > 0) selected -= 1;
-                } else if (ch[2] == 'B') { // DOWN
-                    if (selected < total_items - 1) selected += 1;
-                }
-            } else if (ch[0] == '\n' or ch[0] == '\r' or ch[0] == ' ') {
+            // Arrow Up (CSI [ A or SS3 O A or 'k')
+            if ((r >= 3 and ch[0] == 27 and (ch[1] == '[' or ch[1] == 'O') and ch[2] == 'A') or ch[0] == 'k' or ch[0] == 'K') {
+                if (selected > 0) selected -= 1 else selected = total_items - 1;
+                continue;
+            }
+
+            // Arrow Down (CSI [ B or SS3 O B or 'j')
+            if ((r >= 3 and ch[0] == 27 and (ch[1] == '[' or ch[1] == 'O') and ch[2] == 'B') or ch[0] == 'j' or ch[0] == 'J') {
+                if (selected < total_items - 1) selected += 1 else selected = 0;
+                continue;
+            }
+
+            // Space, Enter, or Right Arrow to Toggle
+            if (ch[0] == ' ' or ch[0] == '\n' or ch[0] == '\r' or (r >= 3 and ch[0] == 27 and ch[2] == 'C')) {
                 toggleSetting(cfg_mgr, selected);
+                continue;
             }
         }
 
         _ = sys.Sys.write(1, "\x1b[2J\x1b[H", 7);
-        std.debug.print("{s}✔ Configuration saved to {s}{s}\n", .{ tui.TUI.C_AQUA, cfg_mgr.config_path[0..cfg_mgr.config_path_len], tui.TUI.C_RESET });
+        std.debug.print("{s}✔ Configuration saved to {s}{s}\n\n", .{ tui.TUI.C_AQUA, cfg_mgr.config_path[0..cfg_mgr.config_path_len], tui.TUI.C_RESET });
     }
 
     fn toggleSetting(cfg: *config.ConfigManager, idx: usize) void {
@@ -144,6 +156,21 @@ pub const InteractiveTUI = struct {
             2 => cfg.config.unbounded_autonomy = !cfg.config.unbounded_autonomy,
             3 => cfg.config.stream_output = !cfg.config.stream_output,
             4 => cfg.config.sandbox_enabled = !cfg.config.sandbox_enabled,
+            5 => {
+                const next_c: config.ContextStrategy = switch (cfg.config.context_strategy) {
+                    .hierarchical_engrams => .rolling_window,
+                    .rolling_window => .full_replay,
+                    .full_replay => .hierarchical_engrams,
+                };
+                cfg.config.context_strategy = next_c;
+            },
+            6 => cfg.config.pre_compact_dump = !cfg.config.pre_compact_dump,
+            7 => {
+                cfg.config.auto_compact_threshold_pct = if (cfg.config.auto_compact_threshold_pct >= 90)
+                    70
+                else
+                    cfg.config.auto_compact_threshold_pct + 10;
+            },
             else => {},
         }
         cfg.save();
@@ -156,11 +183,11 @@ pub const InteractiveTUI = struct {
         const hdr = std.fmt.bufPrint(
             buf[cursor..],
             \\{s}
-            \\{s}┌─────────────────────────────────────────────────────────────────────────────┐{s}
+            \\{s}╭─────────────────────────────────────────────────────────────────────────────╮{s}
             \\{s}│                    ⚡ ZIGAGENT INTERACTIVE SETTINGS PANEL                   │{s}
             \\{s}├─────────────────────────────────────────────────────────────────────────────┤{s}
-            \\{s}│  [↑/↓] Navigate  •  [SPACE/ENTER] Toggle / Cycle  •  [ESC/q] Save & Exit     │{s}
-            \\{s}└─────────────────────────────────────────────────────────────────────────────┘{s}
+            \\{s}│  [↑/↓] Navigate  •  [SPACE/ENTER] Toggle / Cycle  •  [q/ESC] Save & Exit     │{s}
+            \\{s}╰─────────────────────────────────────────────────────────────────────────────╯{s}
             \\
         , .{
             "\x1b[2J\x1b[H",
@@ -172,12 +199,18 @@ pub const InteractiveTUI = struct {
         }) catch return;
         cursor += hdr.len;
 
+        var thresh_buf: [32]u8 = undefined;
+        const thresh_str = std.fmt.bufPrint(&thresh_buf, "{d}% context limit", .{cfg_mgr.config.auto_compact_threshold_pct}) catch "80%";
+
         const items = [_]struct { label: []const u8, val: []const u8 }{
             .{ .label = "1. Verbosity Mode", .val = cfg_mgr.config.verbosity.asString() },
             .{ .label = "2. Thinking Effort", .val = cfg_mgr.config.thinking_effort.asString() },
             .{ .label = "3. Unbounded Autonomy", .val = if (cfg_mgr.config.unbounded_autonomy) "ENABLED (Infinite Steps)" else "DISABLED (Step-Limited)" },
             .{ .label = "4. Real-Time Streaming", .val = if (cfg_mgr.config.stream_output) "ENABLED (Live SSE)" else "DISABLED" },
             .{ .label = "5. Security Sandbox", .val = if (cfg_mgr.config.sandbox_enabled) "ACTIVE (Strict Non-Destructive)" else "PERMISSIVE" },
+            .{ .label = "6. Context Strategy", .val = cfg_mgr.config.context_strategy.asString() },
+            .{ .label = "7. Pre-Compaction Dump", .val = if (cfg_mgr.config.pre_compact_dump) "ENABLED (Auto-save)" else "DISABLED" },
+            .{ .label = "8. Auto-Compact Threshold", .val = thresh_str },
         };
 
         for (items, 0..) |item, idx| {
@@ -188,7 +221,7 @@ pub const InteractiveTUI = struct {
 
             const row = std.fmt.bufPrint(
                 buf[cursor..],
-                "{s}{s:<26} : {s}{s:<40}{s}\n",
+                "{s}{s:<28} : {s}{s:<38}{s}\n",
                 .{ prefix, item.label, val_color, item.val, reset },
             ) catch break;
             cursor += row.len;
@@ -196,6 +229,7 @@ pub const InteractiveTUI = struct {
 
         const footer = std.fmt.bufPrint(
             buf[cursor..],
+            \\
             \\{s}─────────────────────────────────────────────────────────────────────────────{s}
             \\{s}  Config File: {s}{s}
             \\

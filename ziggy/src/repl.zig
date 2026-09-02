@@ -96,17 +96,21 @@ pub const Repl = struct {
 
         var input_buf: [4096]u8 = undefined;
         while (true) {
-            self.renderContextHUD();
-
-            var prompt_buf: [256]u8 = undefined;
-            const prompt_str = std.fmt.bufPrint(
-                &prompt_buf,
-                "{s}ziggy{s} {s}❯{s} ",
+            std.debug.print(
+                "\n{s}╭─ {s}Message Ziggy {s}(Type {s}/{s} for autocomplete, {s}!{s} for shell, {s}ESC{s} to pause){s} ───────────────────────╮{s}\n",
                 .{
-                    tui.TUI.C_CYAN, tui.TUI.C_RESET,
-                    tui.TUI.C_AQUA, tui.TUI.C_RESET,
+                    tui.TUI.C_BORDER,
+                    tui.TUI.C_WHITE,
+                    tui.TUI.C_MUTED,
+                    tui.TUI.C_AQUA, tui.TUI.C_MUTED,
+                    tui.TUI.C_ORANGE, tui.TUI.C_MUTED,
+                    tui.TUI.C_CYAN, tui.TUI.C_MUTED,
+                    tui.TUI.C_BORDER,
+                    tui.TUI.C_RESET,
                 },
-            ) catch "ziggy ❯ ";
+            );
+
+            const prompt_str = "\x1b[38;2;60;80;110m│ \x1b[1;38;2;0;242;254m❯\x1b[0m ";
 
             const line = interactive_tui.InteractiveTUI.readInputWithAutocomplete(
                 self.allocator,
@@ -114,6 +118,9 @@ pub const Repl = struct {
                 &input_buf,
                 &self.history,
             ) orelse break;
+
+            std.debug.print("{s}╰─────────────────────────────────────────────────────────────────────────────╯{s}\n", .{ tui.TUI.C_BORDER, tui.TUI.C_RESET });
+            self.renderBottomHUD();
 
             const trimmed = std.mem.trim(u8, line, " \t\r\n");
             if (trimmed.len == 0) continue;
@@ -142,7 +149,7 @@ pub const Repl = struct {
         }
     }
 
-    fn renderContextHUD(self: *Repl) void {
+    fn renderBottomHUD(self: *Repl) void {
         const cwd = sys.Sys.getenv("PWD") orelse ".";
         const cwd_len = std.mem.sliceTo(cwd, 0).len;
         const cwd_slice = cwd[0..cwd_len];
@@ -155,6 +162,7 @@ pub const Repl = struct {
             std.fmt.bufPrint(&display_ws_buf, "~{s}", .{cwd_slice[home_len..]}) catch cwd_slice
         else
             cwd_slice;
+        _ = display_ws;
 
         // Calculate Context Fill Percentage
         const hot_engrams: u32 = @intCast(self.engine.memory_store.hot_count);
@@ -162,26 +170,23 @@ pub const Repl = struct {
         const max_tokens: u32 = 128000;
         const fill_pct: u32 = @min((estimated_tokens * 100) / max_tokens, 100);
 
-        var bar_buf: [20]u8 = undefined;
-        const filled_slots = (fill_pct * 20) / 100;
-        for (0..20) |idx| {
+        var bar_buf: [15]u8 = undefined;
+        const filled_slots = (fill_pct * 15) / 100;
+        for (0..15) |idx| {
             bar_buf[idx] = if (idx < filled_slots) '=' else '-';
         }
 
-        const bar_color = if (fill_pct < 60) tui.TUI.C_AQUA else if (fill_pct < 85) tui.TUI.C_ORANGE else "\x1b[38;2;255;70;70m";
+        const bar_color = if (fill_pct < 60) "\x1b[38;2;49;196;141m" else if (fill_pct < 85) "\x1b[38;2;255;154;60m" else "\x1b[38;2;255;70;70m";
         const auto_label = if (self.cfg_mgr.config.unbounded_autonomy) "⚡ UNBOUNDED" else "Bounded (15 steps)";
 
         std.debug.print(
-            "\n{s}┌─ [{s}Workspace:{s} {s}] ── [{s}Model:{s} {s}] ── [{s}Reasoning:{s} {s}] ── [{s}{s}{s}]\n" ++
-            "{s}└─ Context Window:{s} {s}[{s}] {d}%{s} ({d}.{d}k / {d}k tokens)\n",
+            "  \x1b[38;2;255;107;53m⚡\x1b[0m \x1b[1;38;2;240;246;252m{s}\x1b[0m \x1b[38;2;60;80;110m│\x1b[0m \x1b[38;2;139;157;175m🧠 Reasoning:\x1b[0m \x1b[38;2;0;242;254m{s}\x1b[0m \x1b[38;2;60;80;110m│\x1b[0m \x1b[38;2;139;157;175m📊 Context:\x1b[0m {s}[{s}]\x1b[0m \x1b[1m{d}%\x1b[0m ({d}.{d}k/{d}k) \x1b[38;2;60;80;110m│\x1b[0m \x1b[38;2;0;242;254m{s}\x1b[0m\n",
             .{
-                tui.TUI.C_BORDER, tui.TUI.C_MUTED, tui.TUI.C_WHITE, display_ws,
-                tui.TUI.C_MUTED, tui.TUI.C_ORANGE, self.active_model,
-                tui.TUI.C_MUTED, tui.TUI.C_AQUA, self.cfg_mgr.config.thinking_effort.asString(),
-                tui.TUI.C_AQUA, auto_label, tui.TUI.C_BORDER,
-                tui.TUI.C_BORDER, tui.TUI.C_MUTED,
-                bar_color, bar_buf[0..20], fill_pct, tui.TUI.C_RESET,
+                self.active_model,
+                self.cfg_mgr.config.thinking_effort.asString(),
+                bar_color, bar_buf[0..15], fill_pct,
                 estimated_tokens / 1000, (estimated_tokens % 1000) / 100, max_tokens / 1000,
+                auto_label,
             },
         );
     }
