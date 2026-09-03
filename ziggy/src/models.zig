@@ -99,6 +99,15 @@ pub const ALL_MODELS = [_]ModelSpec{
 
     // === OpenRouter Free Tier Models ===
     .{
+        .id = "nvidia/nemotron-3-super-120b-a12b:free",
+        .name = "NVIDIA Nemotron 3 Super 120B [FREE]",
+        .provider_label = "OpenRouter",
+        .context_window_k = 1000,
+        .supports_reasoning = true,
+        .is_free = true,
+        .description = "NVIDIA 120B Super frontier reasoning model with native tool execution",
+    },
+    .{
         .id = "nvidia/nemotron-3-ultra-550b-a55b:free",
         .name = "NVIDIA Nemotron 3 Ultra 550B [FREE]",
         .provider_label = "OpenRouter",
@@ -106,6 +115,15 @@ pub const ALL_MODELS = [_]ModelSpec{
         .supports_reasoning = true,
         .is_free = true,
         .description = "NVIDIA 550B MoE frontier reasoning & agent orchestration (1M ctx)",
+    },
+    .{
+        .id = "nvidia/nemotron-3-super-120b-a12b",
+        .name = "NVIDIA Nemotron 3 Super 120B",
+        .provider_label = "OpenRouter",
+        .context_window_k = 1000,
+        .supports_reasoning = true,
+        .is_free = false,
+        .description = "NVIDIA 120B Super dedicated low-latency throughput endpoint",
     },
     .{
         .id = "poolside/laguna-s-2.1:free",
@@ -219,6 +237,28 @@ pub fn getModelContextWindow(model_id: []const u8) u32 {
         }
     }
     return 131072; // default 128k
+}
+
+pub fn resolveModelName(query: []const u8) []const u8 {
+    const trimmed = std.mem.trim(u8, query, " \t\r\n");
+    if (trimmed.len == 0) return "nvidia/nemotron-3-super-120b-a12b:free";
+
+    // 1. Exact match
+    for (ALL_MODELS) |m| {
+        if (std.mem.eql(u8, m.id, trimmed)) return m.id;
+    }
+
+    // 2. Common aliases
+    if (std.mem.eql(u8, trimmed, "nemotron") or std.mem.eql(u8, trimmed, "nemo")) {
+        return "nvidia/nemotron-3-super-120b-a12b:free";
+    }
+
+    // 3. Substring match
+    for (ALL_MODELS) |m| {
+        if (std.mem.indexOf(u8, m.id, trimmed) != null) return m.id;
+    }
+
+    return trimmed;
 }
 
 pub const ModelBrowser = struct {

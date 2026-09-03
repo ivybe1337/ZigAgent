@@ -86,6 +86,7 @@ pub const AgentConfig = struct {
     stream_output: bool = true,
     telemetry_enabled: bool = false,
     active_agent_profile: [64]u8 = [_]u8{0} ** 64,
+    default_model: [128]u8 = [_]u8{0} ** 128,
 };
 
 pub const ConfigManager = struct {
@@ -111,6 +112,7 @@ pub const ConfigManager = struct {
         self.config_path_len = path.len;
 
         _ = std.fmt.bufPrint(&self.config.active_agent_profile, "default", .{}) catch "";
+        _ = std.fmt.bufPrint(&self.config.default_model, "nvidia/nemotron-3-super-120b-a12b:free", .{}) catch "";
         self.load();
 
         return self;
@@ -131,7 +133,8 @@ pub const ConfigManager = struct {
             \\  "max_steps": {d},
             \\  "sandbox_enabled": {s},
             \\  "stream_output": {s},
-            \\  "active_agent_profile": "{s}"
+            \\  "active_agent_profile": "{s}",
+            \\  "default_model": "{s}"
             \\}}
             \\
         , .{
@@ -146,6 +149,7 @@ pub const ConfigManager = struct {
             if (self.config.sandbox_enabled) "true" else "false",
             if (self.config.stream_output) "true" else "false",
             std.mem.sliceTo(&self.config.active_agent_profile, 0),
+            std.mem.sliceTo(&self.config.default_model, 0),
         }) catch return;
 
         const path = self.config_path[0..self.config_path_len];
@@ -180,6 +184,21 @@ pub const ConfigManager = struct {
         if (std.mem.indexOf(u8, content, "\"tool_output_limit\": \"b1024\"") != null) self.config.tool_output_limit = .b1024;
         if (std.mem.indexOf(u8, content, "\"tool_output_limit\": \"b2048\"") != null) self.config.tool_output_limit = .b2048;
         if (std.mem.indexOf(u8, content, "\"tool_output_limit\": \"b4096\"") != null) self.config.tool_output_limit = .b4096;
+
+        if (std.mem.indexOf(u8, content, "\"default_model\"")) |idx| {
+            const after_key = content[idx + 15 ..];
+            if (std.mem.indexOfScalar(u8, after_key, '"')) |q1| {
+                const val_start = q1 + 1;
+                if (std.mem.indexOfScalar(u8, after_key[val_start..], '"')) |q2_rel| {
+                    const val = after_key[val_start .. val_start + q2_rel];
+                    if (val.len > 0) {
+                        const copy_len = @min(val.len, self.config.default_model.len - 1);
+                        @memcpy(self.config.default_model[0..copy_len], val[0..copy_len]);
+                        self.config.default_model[copy_len] = 0;
+                    }
+                }
+            }
+        }
     }
 
     pub fn renderSettingsMenu(self: *const ConfigManager) void {

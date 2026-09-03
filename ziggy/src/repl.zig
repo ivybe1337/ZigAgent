@@ -65,13 +65,19 @@ pub const Repl = struct {
     morph_weaver: morphogenetic.MorphogeneticWeaver,
     history: std.ArrayList([]const u8),
     chat_history: std.ArrayList(http.ChatMessage),
-    active_model: []const u8 = "openai/gpt-oss-120b",
+    active_model_buf: [128]u8 = [_]u8{0} ** 128,
+    active_model_len: usize = 0,
+
+    pub fn getActiveModel(self: *const Repl) []const u8 {
+        if (self.active_model_len > 0) return self.active_model_buf[0..self.active_model_len];
+        return "nvidia/nemotron-3-super-120b-a12b:free";
+    }
 
     pub fn init(allocator: std.mem.Allocator) Repl {
         var tracer = provenance.ProvenanceTracer.init(allocator);
         _ = tracer.addNode(null, .requirement, "Initialize ZigAgent runtime and load cognitive parameters.");
 
-        return .{
+        var r = Repl{
             .allocator = allocator,
             .engine = agent.AgentEngine.init(allocator, ".ziggy/engrams"),
             .vault = auth.AuthVault.init(allocator),
@@ -99,8 +105,16 @@ pub const Repl = struct {
             .morph_weaver = morphogenetic.MorphogeneticWeaver.init(allocator),
             .history = .empty,
             .chat_history = .empty,
-            .active_model = "openai/gpt-oss-120b",
         };
+
+        const saved_model = std.mem.sliceTo(&r.cfg_mgr.config.default_model, 0);
+        const initial = if (saved_model.len > 0) saved_model else "nvidia/nemotron-3-super-120b-a12b:free";
+        const copy_len = @min(initial.len, r.active_model_buf.len - 1);
+        @memcpy(r.active_model_buf[0..copy_len], initial[0..copy_len]);
+        r.active_model_buf[copy_len] = 0;
+        r.active_model_len = copy_len;
+
+        return r;
     }
 
     pub fn deinit(self: *Repl) void {
@@ -129,7 +143,7 @@ pub const Repl = struct {
         last_out: u32,
         session_tokens: u64,
     } {
-        const max_tokens = models.getModelContextWindow(self.active_model);
+        const max_tokens = models.getModelContextWindow(self.getActiveModel());
         var current_tokens: u32 = 0;
 
         if (http.last_usage.total_tokens > 0) {
@@ -167,7 +181,7 @@ pub const Repl = struct {
         std.debug.print(
             "\n\x1b[38;2;100;116;139m╭──\x1b[0m \x1b[1;38;2;241;245;249m{s}\x1b[0m \x1b[38;2;100;116;139m│\x1b[0m \x1b[38;2;148;163;184m{s}\x1b[0m \x1b[38;2;100;116;139m│\x1b[0m {s}{d}/{d}k tok ({d:.1}%)\x1b[0m",
             .{
-                self.active_model,
+                self.getActiveModel(),
                 self.cfg_mgr.config.thinking_effort.asString(),
                 ctx_color,
                 m.current_tokens,
@@ -238,7 +252,7 @@ pub const Repl = struct {
             tui.TUI.C_AQUA, tui.TUI.C_BOLD, tui.TUI.C_RESET,
             tui.TUI.C_DIM, tui.TUI.C_RESET,
             tui.TUI.C_MUTED, tui.TUI.C_CYAN, self.vault.config.provider.asString(), tui.TUI.C_RESET,
-            tui.TUI.C_ORANGE, self.active_model, tui.TUI.C_RESET,
+            tui.TUI.C_ORANGE, self.getActiveModel(), tui.TUI.C_RESET,
             tui.TUI.C_MUTED, tui.TUI.C_WHITE, std.mem.sliceTo(&self.context_ledger.current_agent_id, 0), tui.TUI.C_RESET,
             tui.TUI.C_WHITE, std.mem.sliceTo(&self.context_ledger.current_project_id, 0), tui.TUI.C_RESET,
             tui.TUI.C_MUTED, tui.TUI.C_AQUA, tui.TUI.C_MUTED, tui.TUI.C_ORANGE, tui.TUI.C_MUTED,
@@ -252,6 +266,22 @@ pub const Repl = struct {
             defer self.allocator.free(rehyd_json);
             std.debug.print("\x1b[38;2;0;242;254m⚡ [HOT-RESTART WAKEUP]:\x1b[0m Runtime recompiled & rehydrated into new generation with zero context loss.\n", .{});
         }
+    }
+
+    pub fn setActiveModel(self: *Repl, raw_model: []const u8) void {
+        const resolved = models.resolveModelName(raw_model);
+        const len = @min(resolved.len, self.active_model_buf.len - 1);
+        @memcpy(self.active_model_buf[0..len], resolved[0..len]);
+        self.active_model_buf[len] = 0;
+        self.active_model_len = len;
+
+        const copy_len = @min(resolved.len, self.cfg_mgr.config.default_model.len - 1);
+        @memcpy(self.cfg_mgr.config.default_model[0..copy_len], resolved[0..copy_len]);
+        self.cfg_mgr.config.default_model[copy_len] = 0;
+        self.cfg_mgr.save();
+        std.debug.print("{s}✔ Active Model saved: {s}{s} {s}(sticky preference saved to ~/.ziggy/config.json){s}\n", .{
+            tui.TUI.C_AQUA, resolved, tui.TUI.C_RESET, tui.TUI.C_MUTED, tui.TUI.C_RESET,
+        });
     }
 
     fn handleSlashCommand(self: *Repl, raw_cmd: []const u8) bool {
@@ -701,16 +731,14 @@ pub const Repl = struct {
         }
 
         if (std.mem.eql(u8, cmd, "/models") or (std.mem.eql(u8, cmd, "/model") and arg1 == null)) {
-            if (models.ModelBrowser.runInteractivePicker(self.allocator, self.active_model)) |new_m| {
-                self.active_model = new_m;
-                std.debug.print("\n{s}✔ Activated Model: {s}{s}\n", .{ tui.TUI.C_AQUA, new_m, tui.TUI.C_RESET });
+            if (models.ModelBrowser.runInteractivePicker(self.allocator, self.getActiveModel())) |new_m| {
+                self.setActiveModel(new_m);
             }
             return true;
         }
 
         if (std.mem.eql(u8, cmd, "/model") and arg1 != null) {
-            self.active_model = arg1.?;
-            std.debug.print("{s}✔ Activated Model: {s}{s}\n", .{ tui.TUI.C_AQUA, arg1.?, tui.TUI.C_RESET });
+            self.setActiveModel(arg1.?);
             return true;
         }
 
@@ -867,7 +895,7 @@ pub const Repl = struct {
             const resp_len = http.HttpClient.queryInferenceMessages(
                 self.allocator,
                 &self.vault,
-                self.active_model,
+                self.getActiveModel(),
                 self.chat_history.items,
                 &response_buf,
             );
