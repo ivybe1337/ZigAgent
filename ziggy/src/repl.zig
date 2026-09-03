@@ -122,16 +122,74 @@ pub const Repl = struct {
         self.history.deinit(self.allocator);
     }
 
+    pub fn getContextMetrics(self: *const Repl) struct {
+        current_tokens: u32,
+        max_tokens: u32,
+        fill_pct: f32,
+        last_out: u32,
+        session_tokens: u64,
+    } {
+        const max_tokens = models.getModelContextWindow(self.active_model);
+        var current_tokens: u32 = 0;
+
+        if (http.last_usage.total_tokens > 0) {
+            current_tokens = http.last_usage.total_tokens;
+        } else {
+            var total_bytes: usize = http.SYSTEM_PROMPT_WITH_TOOLS.len;
+            for (self.chat_history.items) |msg| {
+                total_bytes += msg.content.len + 32;
+            }
+            current_tokens = http.estimateTokensFromBytes(total_bytes);
+        }
+
+        const fill_pct: f32 = (@as(f32, @floatFromInt(current_tokens)) / @as(f32, @floatFromInt(max_tokens))) * 100.0;
+        return .{
+            .current_tokens = current_tokens,
+            .max_tokens = max_tokens,
+            .fill_pct = fill_pct,
+            .last_out = http.last_usage.completion_tokens,
+            .session_tokens = http.session_total_tokens,
+        };
+    }
+
+    fn renderPromptHeader(self: *Repl) void {
+        const m = self.getContextMetrics();
+
+        const ctx_color = if (m.fill_pct < 50.0)
+            "\x1b[38;2;49;196;141m" // green
+        else if (m.fill_pct < 80.0)
+            "\x1b[38;2;255;184;108m" // amber
+        else
+            "\x1b[38;2;255;107;107m"; // red
+
+        const max_k = m.max_tokens / 1000;
+
+        std.debug.print(
+            "\n\x1b[38;2;100;116;139m╭──\x1b[0m \x1b[1;38;2;241;245;249m{s}\x1b[0m \x1b[38;2;100;116;139m│\x1b[0m \x1b[38;2;148;163;184m{s}\x1b[0m \x1b[38;2;100;116;139m│\x1b[0m {s}{d}/{d}k tok ({d:.1}%)\x1b[0m",
+            .{
+                self.active_model,
+                self.cfg_mgr.config.thinking_effort.asString(),
+                ctx_color,
+                m.current_tokens,
+                max_k,
+                m.fill_pct,
+            },
+        );
+
+        if (m.session_tokens > 0) {
+            std.debug.print(" \x1b[38;2;100;116;139m│\x1b[0m \x1b[38;2;148;163;184mSession: {d} tok\x1b[0m", .{m.session_tokens});
+        }
+        std.debug.print(" \x1b[38;2;100;116;139m───────────────────────────────────────────────\x1b[0m\n", .{});
+    }
+
     pub fn run(self: *Repl) !void {
         self.printWelcome();
 
         var input_buf: [8192]u8 = undefined;
         while (true) {
-            // Render top horizontal divider (matches AgY screenshot)
-            std.debug.print("\n\x1b[38;2;75;85;99m────────────────────────────────────────────────────────────────────────────────\x1b[0m\n", .{});
+            self.renderPromptHeader();
 
-            // Prompt prefix (purple '>   ' matching AgY screenshot)
-            const prompt_str = "\x1b[38;2;168;85;247m>\x1b[0m   ";
+            const prompt_str = "\x1b[38;2;100;116;139m╰─\x1b[38;2;168;85;247m❯\x1b[0m ";
 
             const line = interactive_tui.InteractiveTUI.readInputWithAutocomplete(
                 self.allocator,
@@ -139,10 +197,6 @@ pub const Repl = struct {
                 &input_buf,
                 &self.history,
             ) orelse break;
-
-            // Render bottom horizontal divider (matches AgY screenshot)
-            std.debug.print("\x1b[38;2;75;85;99m────────────────────────────────────────────────────────────────────────────────\x1b[0m\n", .{});
-            self.renderBottomStatus();
 
             const trimmed = std.mem.trim(u8, line, " \t\r\n");
             if (trimmed.len == 0) continue;
@@ -169,22 +223,6 @@ pub const Repl = struct {
             // Execute goal with full autonomous tool-calling loop
             self.executeAutonomousGoal(trimmed);
         }
-    }
-
-    fn renderBottomStatus(self: *Repl) void {
-        const hot_engrams: u32 = @intCast(self.engine.memory_store.hot_count);
-        const estimated_tokens: u32 = hot_engrams * 1250 + 2400;
-        const max_tokens: u32 = 128000;
-        const fill_pct: u32 = @min((estimated_tokens * 100) / max_tokens, 100);
-
-        std.debug.print(
-            "                                     \x1b[38;2;156;163;175m{s}\x1b[0m \x1b[38;2;107;114;128m•\x1b[0m \x1b[38;2;156;163;175m{s}\x1b[0m \x1b[38;2;107;114;128m•\x1b[0m \x1b[38;2;49;196;141mContext: {d}%\x1b[0m\n\n",
-            .{
-                self.active_model,
-                self.cfg_mgr.config.thinking_effort.asString(),
-                fill_pct,
-            },
-        );
     }
 
     fn printWelcome(self: *Repl) void {
@@ -798,11 +836,9 @@ pub const Repl = struct {
         else
             @min(self.cfg_mgr.config.max_steps, 25);
 
-        // Context Token & Compaction Threshold Check
-        const hot_engrams: u32 = @intCast(self.engine.memory_store.hot_count);
-        const estimated_tokens: u32 = hot_engrams * 1250 + 2400;
-        const max_tokens: u32 = 128000;
-        const fill_pct: u32 = @min((estimated_tokens * 100) / max_tokens, 100);
+        // Real Context Token & Compaction Threshold Check
+        const ctx_metrics = self.getContextMetrics();
+        const fill_pct: u32 = @intFromFloat(ctx_metrics.fill_pct);
 
         if (fill_pct >= self.cfg_mgr.config.auto_compact_threshold_pct) {
             std.debug.print(

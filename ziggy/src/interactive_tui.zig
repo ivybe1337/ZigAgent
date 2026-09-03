@@ -70,7 +70,20 @@ pub const COMMON_PROMPTS = [_][]const u8{
 };
 
 pub const InteractiveTUI = struct {
-    /// Interactive terminal input reader with TAB autocomplete for / commands, normal prompts, and history navigation
+    fn refreshLine(prompt_prefix: []const u8, text: []const u8, cursor_pos: usize) void {
+        _ = sys.Sys.write(1, "\r\x1b[2K", 5);
+        _ = sys.Sys.write(1, prompt_prefix.ptr, prompt_prefix.len);
+        _ = sys.Sys.write(1, text.ptr, text.len);
+        if (text.len > cursor_pos) {
+            var move_buf: [16]u8 = undefined;
+            const move_str = std.fmt.bufPrint(&move_buf, "\x1b[{d}D", .{text.len - cursor_pos}) catch "";
+            if (move_str.len > 0) {
+                _ = sys.Sys.write(1, move_str.ptr, move_str.len);
+            }
+        }
+    }
+
+    /// Interactive terminal input reader with full arrow navigation, editing, TAB autocomplete & history
     pub fn readInputWithAutocomplete(
         allocator: std.mem.Allocator,
         prompt_prefix: []const u8,
@@ -97,23 +110,24 @@ pub const InteractiveTUI = struct {
         defer _ = sys.Sys.write(1, "\x1b[?2004l", 8);
 
         var buf: [65536]u8 = undefined;
-        var cursor: usize = 0;
+        var total_len: usize = 0;
+        var cursor_pos: usize = 0;
         var in_paste = false;
 
         var history_idx: isize = @intCast(history.items.len);
-        var esc_buf: [8]u8 = undefined;
+        var esc_buf: [16]u8 = undefined;
         var esc_len: usize = 0;
 
-        while (cursor < buf.len - 1) {
+        while (total_len < buf.len - 1) {
             var ch: [1]u8 = undefined;
             const r = sys.Sys.read(0, &ch, 1);
             if (r <= 0) {
                 if (!is_tty) {
-                    if (cursor == 0) return null;
+                    if (total_len == 0) return null;
                     break;
                 }
                 // Idle timer triggered: circulate an informative tip if user is sitting idle at empty prompt
-                if (cursor == 0 and !in_paste) {
+                if (total_len == 0 and !in_paste) {
                     const tip = tips.getNextTip();
                     _ = sys.Sys.write(1, "\r\x1b[K\x1b[38;2;120;140;165m💡 Tip: \x1b[38;2;160;185;210m", 45);
                     _ = sys.Sys.write(1, tip.ptr, tip.len);
@@ -123,13 +137,15 @@ pub const InteractiveTUI = struct {
                 continue;
             }
 
-            // 1. Bracketed paste & escape sequences (arrow keys, etc.)
+            // 1. Bracketed paste & escape sequences (arrow keys, home, end, delete)
             if (esc_len > 0 or ch[0] == 27) {
                 if (esc_len < esc_buf.len) {
                     esc_buf[esc_len] = ch[0];
                     esc_len += 1;
                 }
                 const cur_esc = esc_buf[0..esc_len];
+
+                // Bracketed paste detection
                 if (std.mem.eql(u8, cur_esc, "\x1b[200~")) {
                     in_paste = true;
                     esc_len = 0;
@@ -138,18 +154,19 @@ pub const InteractiveTUI = struct {
                     in_paste = false;
                     esc_len = 0;
                     continue;
-                } else if (esc_len == 3 and cur_esc[1] == '[') {
+                }
+
+                // 3-byte escape sequences: Arrow keys, Home, End
+                if (esc_len == 3 and cur_esc[1] == '[') {
                     // Arrow UP (history previous)
                     if (cur_esc[2] == 'A') {
                         if (history.items.len > 0 and history_idx > 0) {
                             history_idx -= 1;
                             const prev = history.items[@intCast(history_idx)];
-                            while (cursor > 0) : (cursor -= 1) {
-                                _ = sys.Sys.write(1, "\x08 \x08", 3);
-                            }
                             @memcpy(buf[0..prev.len], prev);
-                            cursor = prev.len;
-                            _ = sys.Sys.write(1, prev.ptr, prev.len);
+                            total_len = prev.len;
+                            cursor_pos = prev.len;
+                            refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
                         }
                         esc_len = 0;
                         continue;
@@ -159,29 +176,79 @@ pub const InteractiveTUI = struct {
                         if (history.items.len > 0 and history_idx < @as(isize, @intCast(history.items.len)) - 1) {
                             history_idx += 1;
                             const next = history.items[@intCast(history_idx)];
-                            while (cursor > 0) : (cursor -= 1) {
-                                _ = sys.Sys.write(1, "\x08 \x08", 3);
-                            }
                             @memcpy(buf[0..next.len], next);
-                            cursor = next.len;
-                            _ = sys.Sys.write(1, next.ptr, next.len);
+                            total_len = next.len;
+                            cursor_pos = next.len;
+                            refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
                         } else if (history_idx >= @as(isize, @intCast(history.items.len)) - 1) {
                             history_idx = @intCast(history.items.len);
-                            while (cursor > 0) : (cursor -= 1) {
-                                _ = sys.Sys.write(1, "\x08 \x08", 3);
-                            }
+                            total_len = 0;
+                            cursor_pos = 0;
+                            refreshLine(prompt_prefix, "", 0);
                         }
                         esc_len = 0;
                         continue;
                     }
-                } else if (esc_len >= 6 or (esc_len >= 2 and esc_buf[1] != '[')) {
-                    for (cur_esc) |b| {
-                        if (cursor < buf.len - 1) {
-                            buf[cursor] = b;
-                            cursor += 1;
-                            _ = sys.Sys.write(1, &[_]u8{b}, 1);
+                    // Arrow RIGHT
+                    if (cur_esc[2] == 'C') {
+                        if (cursor_pos < total_len) {
+                            cursor_pos += 1;
+                            _ = sys.Sys.write(1, "\x1b[C", 3);
                         }
+                        esc_len = 0;
+                        continue;
                     }
+                    // Arrow LEFT
+                    if (cur_esc[2] == 'D') {
+                        if (cursor_pos > 0) {
+                            cursor_pos -= 1;
+                            _ = sys.Sys.write(1, "\x1b[D", 3);
+                        }
+                        esc_len = 0;
+                        continue;
+                    }
+                    // Home
+                    if (cur_esc[2] == 'H') {
+                        cursor_pos = 0;
+                        refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
+                        esc_len = 0;
+                        continue;
+                    }
+                    // End
+                    if (cur_esc[2] == 'F') {
+                        cursor_pos = total_len;
+                        refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
+                        esc_len = 0;
+                        continue;
+                    }
+                }
+
+                // 4-byte escape sequences: Delete (\x1b[3~), Home (\x1b[1~), End (\x1b[4~)
+                if (esc_len == 4 and cur_esc[1] == '[') {
+                    if (cur_esc[2] == '3' and cur_esc[3] == '~') { // Delete
+                        if (cursor_pos < total_len) {
+                            for (cursor_pos..total_len - 1) |idx| {
+                                buf[idx] = buf[idx + 1];
+                            }
+                            total_len -= 1;
+                            refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
+                        }
+                        esc_len = 0;
+                        continue;
+                    } else if (cur_esc[2] == '1' and cur_esc[3] == '~') { // Home
+                        cursor_pos = 0;
+                        refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
+                        esc_len = 0;
+                        continue;
+                    } else if (cur_esc[2] == '4' and cur_esc[3] == '~') { // End
+                        cursor_pos = total_len;
+                        refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
+                        esc_len = 0;
+                        continue;
+                    }
+                }
+
+                if (esc_len >= 6 or (esc_len >= 2 and esc_buf[1] != '[')) {
                     esc_len = 0;
                     continue;
                 }
@@ -194,11 +261,15 @@ pub const InteractiveTUI = struct {
                 break;
             }
 
-            // 3. Backspace
+            // 3. Backspace (0x7f or 0x08)
             if (!in_paste and (ch[0] == 127 or ch[0] == 8)) {
-                if (cursor > 0) {
-                    cursor -= 1;
-                    if (is_tty) _ = sys.Sys.write(1, "\x08 \x08", 3);
+                if (cursor_pos > 0) {
+                    for (cursor_pos - 1..total_len - 1) |idx| {
+                        buf[idx] = buf[idx + 1];
+                    }
+                    cursor_pos -= 1;
+                    total_len -= 1;
+                    refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
                 }
                 continue;
             }
@@ -209,9 +280,54 @@ pub const InteractiveTUI = struct {
                 return "";
             }
 
-            // 5. TAB -> Auto Complete Suggestions (/ commands & prompt box)
+            // 5. Ctrl+A (Home)
+            if (ch[0] == 1) {
+                cursor_pos = 0;
+                refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
+                continue;
+            }
+
+            // 6. Ctrl+E (End)
+            if (ch[0] == 5) {
+                cursor_pos = total_len;
+                refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
+                continue;
+            }
+
+            // 7. Ctrl+U (Clear line)
+            if (ch[0] == 21) {
+                cursor_pos = 0;
+                total_len = 0;
+                refreshLine(prompt_prefix, "", 0);
+                continue;
+            }
+
+            // 8. Ctrl+K (Kill to end of line)
+            if (ch[0] == 11) {
+                total_len = cursor_pos;
+                refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
+                continue;
+            }
+
+            // 9. Ctrl+W (Delete previous word)
+            if (ch[0] == 23) {
+                while (cursor_pos > 0 and buf[cursor_pos - 1] == ' ') {
+                    for (cursor_pos - 1..total_len - 1) |idx| buf[idx] = buf[idx + 1];
+                    cursor_pos -= 1;
+                    total_len -= 1;
+                }
+                while (cursor_pos > 0 and buf[cursor_pos - 1] != ' ') {
+                    for (cursor_pos - 1..total_len - 1) |idx| buf[idx] = buf[idx + 1];
+                    cursor_pos -= 1;
+                    total_len -= 1;
+                }
+                refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
+                continue;
+            }
+
+            // 10. TAB -> Auto Complete Suggestions (/ commands & prompt box)
             if (!in_paste and ch[0] == '\t') {
-                const cur_text = buf[0..cursor];
+                const cur_text = buf[0..cursor_pos];
                 if (std.mem.startsWith(u8, cur_text, "/")) {
                     var matches: [16][]const u8 = undefined;
                     var match_count: usize = 0;
@@ -226,16 +342,11 @@ pub const InteractiveTUI = struct {
 
                     if (match_count == 1) {
                         const completed = matches[0];
-                        if (is_tty) {
-                            while (cursor > 0) : (cursor -= 1) {
-                                _ = sys.Sys.write(1, "\x08 \x08", 3);
-                            }
-                        }
                         @memcpy(buf[0..completed.len], completed);
-                        cursor = completed.len;
-                        buf[cursor] = ' ';
-                        cursor += 1;
-                        if (is_tty) _ = sys.Sys.write(1, buf[0..cursor].ptr, cursor);
+                        buf[completed.len] = ' ';
+                        total_len = completed.len + 1;
+                        cursor_pos = total_len;
+                        refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
                     } else if (match_count > 1 and is_tty) {
                         _ = sys.Sys.write(1, "\r\n\x1b[38;2;139;157;175m  Suggestions: \x1b[0m", 37);
                         for (matches[0..match_count]) |m| {
@@ -244,8 +355,7 @@ pub const InteractiveTUI = struct {
                             _ = sys.Sys.write(1, "\x1b[0m  ", 6);
                         }
                         _ = sys.Sys.write(1, "\r\n", 2);
-                        _ = sys.Sys.write(1, prompt_prefix.ptr, prompt_prefix.len);
-                        _ = sys.Sys.write(1, cur_text.ptr, cur_text.len);
+                        refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
                     }
                 } else {
                     var prompt_matches: [8][]const u8 = undefined;
@@ -261,14 +371,10 @@ pub const InteractiveTUI = struct {
 
                     if (p_count == 1) {
                         const completed = prompt_matches[0];
-                        if (is_tty) {
-                            while (cursor > 0) : (cursor -= 1) {
-                                _ = sys.Sys.write(1, "\x08 \x08", 3);
-                            }
-                        }
                         @memcpy(buf[0..completed.len], completed);
-                        cursor = completed.len;
-                        if (is_tty) _ = sys.Sys.write(1, buf[0..cursor].ptr, cursor);
+                        total_len = completed.len;
+                        cursor_pos = completed.len;
+                        refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
                     } else if (p_count > 1 and is_tty) {
                         _ = sys.Sys.write(1, "\r\n\x1b[38;2;139;157;175m  Suggestions: \x1b[0m", 37);
                         for (prompt_matches[0..p_count]) |m| {
@@ -277,27 +383,32 @@ pub const InteractiveTUI = struct {
                             _ = sys.Sys.write(1, "\x1b[0m  ", 6);
                         }
                         _ = sys.Sys.write(1, "\r\n", 2);
-                        _ = sys.Sys.write(1, prompt_prefix.ptr, prompt_prefix.len);
-                        _ = sys.Sys.write(1, cur_text.ptr, cur_text.len);
+                        refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
                     }
                 }
                 continue;
             }
 
-            // Normal character echo and append
-            if (ch[0] == '\r') {
-                buf[cursor] = '\n';
+            // 11. Normal character insertion (supports insertion in middle of line)
+            if (cursor_pos == total_len) {
+                buf[cursor_pos] = if (ch[0] == '\r') '\n' else ch[0];
+                cursor_pos += 1;
+                total_len += 1;
+                if (is_tty) _ = sys.Sys.write(1, &ch, 1);
             } else {
-                buf[cursor] = ch[0];
-            }
-            cursor += 1;
-            if (is_tty) {
-                _ = sys.Sys.write(1, &ch, 1);
+                var idx = total_len;
+                while (idx > cursor_pos) : (idx -= 1) {
+                    buf[idx] = buf[idx - 1];
+                }
+                buf[cursor_pos] = if (ch[0] == '\r') '\n' else ch[0];
+                cursor_pos += 1;
+                total_len += 1;
+                refreshLine(prompt_prefix, buf[0..total_len], cursor_pos);
             }
         }
-        buf[cursor] = 0;
+        buf[total_len] = 0;
 
-        const raw_slice = buf[0..cursor];
+        const raw_slice = buf[0..total_len];
         const trimmed = std.mem.trim(u8, raw_slice, " \t\r\n");
         if (trimmed.len > 0) {
             const dup = allocator.dupe(u8, trimmed) catch "";

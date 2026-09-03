@@ -212,6 +212,15 @@ pub const ALL_MODELS = [_]ModelSpec{
     },
 };
 
+pub fn getModelContextWindow(model_id: []const u8) u32 {
+    for (ALL_MODELS) |m| {
+        if (std.mem.eql(u8, m.id, model_id)) {
+            return m.context_window_k * 1024;
+        }
+    }
+    return 131072; // default 128k
+}
+
 pub const ModelBrowser = struct {
     /// Full OpenRouter-Style Interactive Scrollable Model Picker
     pub fn runInteractivePicker(allocator: std.mem.Allocator, current_model: []const u8) ?[]const u8 {

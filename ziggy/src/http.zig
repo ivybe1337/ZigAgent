@@ -29,6 +29,25 @@ pub const ChatMessage = struct {
     content: []const u8,
 };
 
+pub const UsageStats = struct {
+    prompt_tokens: u32 = 0,
+    completion_tokens: u32 = 0,
+    total_tokens: u32 = 0,
+};
+
+pub var last_usage: UsageStats = .{};
+pub var session_total_tokens: u64 = 0;
+
+pub fn estimateTokens(text: []const u8) u32 {
+    return estimateTokensFromBytes(text.len);
+}
+
+pub fn estimateTokensFromBytes(byte_len: usize) u32 {
+    if (byte_len == 0) return 0;
+    // Standard BPE estimation: ~3.8 chars per token for code/English
+    return @intCast((byte_len * 10) / 38);
+}
+
 pub const HttpClient = struct {
     /// Single-prompt wrapper for compatibility
     pub fn queryInference(
@@ -269,6 +288,46 @@ pub const HttpClient = struct {
 
         const raw_slice = resp_raw[0..total_read];
         var out_cursor: usize = 0;
+
+        // Extract real API usage tokens ("prompt_tokens": ..., "completion_tokens": ..., "total_tokens": ...)
+        if (std.mem.indexOf(u8, raw_slice, "\"usage\"")) |u_idx| {
+            const usage_slice = raw_slice[u_idx..];
+            var p_tok: u32 = 0;
+            var c_tok: u32 = 0;
+            var t_tok: u32 = 0;
+
+            if (std.mem.indexOf(u8, usage_slice, "\"prompt_tokens\":")) |pt_idx| {
+                const start = pt_idx + 16;
+                var end = start;
+                while (end < usage_slice.len and (usage_slice[end] == ' ' or (usage_slice[end] >= '0' and usage_slice[end] <= '9'))) : (end += 1) {}
+                const trimmed_num = std.mem.trim(u8, usage_slice[start..end], " ");
+                p_tok = std.fmt.parseInt(u32, trimmed_num, 10) catch 0;
+            }
+            if (std.mem.indexOf(u8, usage_slice, "\"completion_tokens\":")) |ct_idx| {
+                const start = ct_idx + 20;
+                var end = start;
+                while (end < usage_slice.len and (usage_slice[end] == ' ' or (usage_slice[end] >= '0' and usage_slice[end] <= '9'))) : (end += 1) {}
+                const trimmed_num = std.mem.trim(u8, usage_slice[start..end], " ");
+                c_tok = std.fmt.parseInt(u32, trimmed_num, 10) catch 0;
+            }
+            if (std.mem.indexOf(u8, usage_slice, "\"total_tokens\":")) |tt_idx| {
+                const start = tt_idx + 15;
+                var end = start;
+                while (end < usage_slice.len and (usage_slice[end] == ' ' or (usage_slice[end] >= '0' and usage_slice[end] <= '9'))) : (end += 1) {}
+                const trimmed_num = std.mem.trim(u8, usage_slice[start..end], " ");
+                t_tok = std.fmt.parseInt(u32, trimmed_num, 10) catch 0;
+            }
+            if (t_tok == 0) t_tok = p_tok + c_tok;
+
+            if (p_tok > 0 or c_tok > 0 or t_tok > 0) {
+                last_usage = .{
+                    .prompt_tokens = p_tok,
+                    .completion_tokens = c_tok,
+                    .total_tokens = t_tok,
+                };
+                session_total_tokens += t_tok;
+            }
+        }
 
         // 1. Extract reasoning if present ("reasoning":"...")
         if (std.mem.indexOf(u8, raw_slice, "\"reasoning\":\"")) |r_idx| {
