@@ -32,7 +32,14 @@ pub const SelfImprovementEngine = struct {
 
         std.debug.print("  {s}Module Status Check (Generation {d}):{s}\n", .{ tui.TUI.C_WHITE, self.evolution_generation, tui.TUI.C_RESET });
         for (self_modules) |m| {
-            const exists = sys.Sys.open(@ptrCast(m.name), sys.O_RDONLY);
+            var exists = sys.Sys.open(@ptrCast(m.name), sys.O_RDONLY);
+            if (exists < 0) {
+                var alt_buf: [256]u8 = undefined;
+                if (std.fmt.bufPrint(&alt_buf, "ziggy/{s}", .{m.name})) |alt_p| {
+                    alt_buf[alt_p.len] = 0;
+                    exists = sys.Sys.open(@ptrCast(&alt_buf[0]), sys.O_RDONLY);
+                } else |_| {}
+            }
             const status_str = if (exists >= 0) "\x1b[38;2;49;196;141m[PRESENT]\x1b[0m" else "\x1b[38;2;255;107;53m[MISSING]\x1b[0m";
             if (exists >= 0) _ = sys.Sys.close(exists);
 
