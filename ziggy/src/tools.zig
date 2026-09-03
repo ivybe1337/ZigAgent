@@ -1,6 +1,9 @@
 const std = @import("std");
 const sys = @import("sys.zig");
 const tui = @import("tui.zig");
+const minds_eye = @import("minds_eye.zig");
+const thermodynamic_memory = @import("thermodynamic_memory.zig");
+const morphogenetic = @import("morphogenetic.zig");
 
 pub const ToolResult = struct {
     success: bool,
@@ -103,6 +106,53 @@ pub const NativeTools = struct {
         return self_tools.executeCommand(alloc, cmd);
     }
 
+    pub fn screenshot(_: NativeTools, alloc: std.mem.Allocator) ToolResult {
+        var eye = minds_eye.MindsEye.init(alloc);
+        defer eye.deinit();
+        const res = eye.captureScreen();
+        if (res.success) {
+            const out = std.fmt.allocPrint(alloc, "Captured display snapshot: {s} ({d}x{d})", .{ res.image_path, res.width, res.height }) catch res.image_path;
+            return .{ .success = true, .output = out, .error_msg = "" };
+        }
+        return .{ .success = false, .output = "", .error_msg = res.error_msg };
+    }
+
+    pub fn mouseClick(_: NativeTools, x: i32, y: i32) ToolResult {
+        if (minds_eye.MindsEye.mouseClick(x, y)) {
+            return .{ .success = true, .output = "Mouse clicked at coordinate.", .error_msg = "" };
+        }
+        return .{ .success = false, .output = "", .error_msg = "Failed to dispatch mouse click event." };
+    }
+
+    pub fn keyboardType(_: NativeTools, text: []const u8) ToolResult {
+        if (minds_eye.MindsEye.keyboardType(text)) {
+            return .{ .success = true, .output = "Keyboard text typed into target window.", .error_msg = "" };
+        }
+        return .{ .success = false, .output = "", .error_msg = "Failed to dispatch keystrokes." };
+    }
+
+    pub fn windowFocus(_: NativeTools, app_name: []const u8) ToolResult {
+        if (minds_eye.MindsEye.windowFocus(app_name)) {
+            return .{ .success = true, .output = "Focused target application window.", .error_msg = "" };
+        }
+        return .{ .success = false, .output = "", .error_msg = "Failed to focus target application window." };
+    }
+
+    pub fn thermodynamicQuery(_: NativeTools, alloc: std.mem.Allocator, query: []const u8) ToolResult {
+        var mem = thermodynamic_memory.ThermodynamicMemory.init(alloc);
+        defer mem.deinit();
+        var buf: [4096]u8 = undefined;
+        const len = mem.queryWorkingMemory(query, &buf);
+        const out = alloc.dupe(u8, buf[0..len]) catch "";
+        return .{ .success = true, .output = out, .error_msg = "" };
+    }
+
+    pub fn synthesizeNativeTool(_: NativeTools, alloc: std.mem.Allocator, name: []const u8, description: []const u8, zig_source: []const u8) ToolResult {
+        var weaver = morphogenetic.MorphogeneticWeaver.init(alloc);
+        defer weaver.deinit();
+        return weaver.synthesizeTool(name, description, zig_source);
+    }
+
     pub fn executeCommand(_: NativeTools, alloc: std.mem.Allocator, cmd: []const u8) ToolResult {
         var c_cmd: [4096]u8 = undefined;
         if (cmd.len >= c_cmd.len - 1) {
@@ -147,7 +197,6 @@ pub const NativeTools = struct {
         return self.executeCommand(alloc, "git log -n 10 --oneline");
     }
 
-    /// Real project topology scan measuring actual file counts, LOC, and git status
     pub fn deterministicAnalyzeProject(self: NativeTools, alloc: std.mem.Allocator, path: []const u8) ToolResult {
         const target = if (path.len == 0) "." else path;
         
@@ -244,6 +293,28 @@ pub const NativeTools = struct {
         } else if (std.mem.indexOf(u8, json, "\"fetch_web\"") != null) {
             const url = extractJsonField(json, "url") orelse "";
             return self.fetchWeb(alloc, url);
+        } else if (std.mem.indexOf(u8, json, "\"screenshot\"") != null) {
+            return self.screenshot(alloc);
+        } else if (std.mem.indexOf(u8, json, "\"mouse_click\"") != null) {
+            const x_str = extractJsonField(json, "x") orelse "100";
+            const y_str = extractJsonField(json, "y") orelse "100";
+            const x = std.fmt.parseInt(i32, x_str, 10) catch 100;
+            const y = std.fmt.parseInt(i32, y_str, 10) catch 100;
+            return self.mouseClick(x, y);
+        } else if (std.mem.indexOf(u8, json, "\"keyboard_type\"") != null) {
+            const text = extractJsonField(json, "text") orelse "";
+            return self.keyboardType(text);
+        } else if (std.mem.indexOf(u8, json, "\"window_focus\"") != null) {
+            const app_name = extractJsonField(json, "app_name") orelse "";
+            return self.windowFocus(app_name);
+        } else if (std.mem.indexOf(u8, json, "\"thermodynamic_query\"") != null) {
+            const q = extractJsonField(json, "query") orelse "";
+            return self.thermodynamicQuery(alloc, q);
+        } else if (std.mem.indexOf(u8, json, "\"synthesize_native_tool\"") != null) {
+            const name = extractJsonField(json, "name") orelse "tool_gen";
+            const desc = extractJsonField(json, "description") orelse "Synthesized native micro-tool";
+            const src = extractJsonField(json, "source") orelse "pub fn main() void {}";
+            return self.synthesizeNativeTool(alloc, name, desc, src);
         } else if (std.mem.indexOf(u8, json, "\"git_status\"") != null) {
             return self.gitStatus(alloc);
         } else if (std.mem.indexOf(u8, json, "\"git_diff\"") != null) {
@@ -286,6 +357,13 @@ pub fn extractJsonField(json: []const u8, field: []const u8) ?[]const u8 {
                 } else {
                     escaped = false;
                 }
+            }
+        } else {
+            // Unquoted number or boolean
+            var end = start;
+            while (end < after_key.len and after_key[end] != ',' and after_key[end] != '}' and after_key[end] != ' ' and after_key[end] != '\n') : (end += 1) {}
+            if (end > start) {
+                return after_key[start..end];
             }
         }
     }

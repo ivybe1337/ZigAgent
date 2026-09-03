@@ -30,6 +30,11 @@ const messaging = @import("messaging.zig");
 const ast_query = @import("ast_query.zig");
 const swarm = @import("swarm.zig");
 const model_router = @import("model_router.zig");
+const minds_eye = @import("minds_eye.zig");
+const thermodynamic_memory = @import("thermodynamic_memory.zig");
+const bifurcation = @import("bifurcation.zig");
+const introspective_engine = @import("introspective_engine.zig");
+const morphogenetic = @import("morphogenetic.zig");
 
 pub const Repl = struct {
     allocator: std.mem.Allocator,
@@ -52,6 +57,11 @@ pub const Repl = struct {
     messaging_hub: messaging.MessagingHub,
     ast_query_engine: ast_query.AstQueryEngine,
     swarm_orchestrator: swarm.SwarmOrchestrator,
+    eye: minds_eye.MindsEye,
+    thermo_mem: thermodynamic_memory.ThermodynamicMemory,
+    bifurc_engine: bifurcation.BifurcationEngine,
+    intro_engine: introspective_engine.IntrospectiveEngine,
+    morph_weaver: morphogenetic.MorphogeneticWeaver,
     history: std.ArrayList([]const u8),
     active_model: []const u8 = "openai/gpt-oss-120b",
 
@@ -80,6 +90,11 @@ pub const Repl = struct {
             .messaging_hub = messaging.MessagingHub.init(allocator),
             .ast_query_engine = ast_query.AstQueryEngine.init(allocator),
             .swarm_orchestrator = swarm.SwarmOrchestrator.init(allocator),
+            .eye = minds_eye.MindsEye.init(allocator),
+            .thermo_mem = thermodynamic_memory.ThermodynamicMemory.init(allocator),
+            .bifurc_engine = bifurcation.BifurcationEngine.init(allocator),
+            .intro_engine = introspective_engine.IntrospectiveEngine.init(allocator),
+            .morph_weaver = morphogenetic.MorphogeneticWeaver.init(allocator),
             .history = .empty,
             .active_model = "openai/gpt-oss-120b",
         };
@@ -90,6 +105,9 @@ pub const Repl = struct {
         self.mcp_mgr.deinit();
         self.skill_mgr.deinit();
         self.plugin_mgr.deinit();
+        self.eye.deinit();
+        self.thermo_mem.deinit();
+        self.morph_weaver.deinit();
     }
 
     pub fn run(self: *Repl) !void {
@@ -655,6 +673,49 @@ pub const Repl = struct {
                     masked,
                 });
             }
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/minds_eye") or std.mem.eql(u8, cmd, "/eye")) {
+            std.debug.print("\n{s}=== MIND'S EYE SPATIAL VISION & COMPUTER USE ==={s}\n", .{ tui.TUI.C_CYAN, tui.TUI.C_RESET });
+            const cap = self.eye.captureScreen();
+            if (cap.success) {
+                std.debug.print("  • \x1b[38;2;49;196;141m✔ Display Snapshot:\x1b[0m {s}\n", .{cap.image_path});
+                std.debug.print("  • Resolution: \x1b[1m{d} x {d}\x1b[0m\n", .{ cap.width, cap.height });
+                std.debug.print("  • Visual Grounding: Ready for coordinate interaction (mouse_click, keyboard_type).\n\n", .{});
+            } else {
+                std.debug.print("  • \x1b[38;2;255;107;53m✘ Capture error:\x1b[0m {s}\n\n", .{cap.error_msg});
+            }
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/thermo") or std.mem.eql(u8, cmd, "/memory")) {
+            const q = arg1 orelse "";
+            var buf: [4096]u8 = undefined;
+            const len = self.thermo_mem.queryWorkingMemory(q, &buf);
+            std.debug.print("\n{s}\n", .{buf[0..len]});
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/bifurcate")) {
+            self.bifurc_engine.renderTelemetry();
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/introspect")) {
+            std.debug.print("\n{s}=== METACOGNITIVE EPISTEMIC INVARIANT SELF-PROOF ==={s}\n", .{ tui.TUI.C_CYAN, tui.TUI.C_RESET });
+            const stmt = arg1 orelse "Verify current execution bounds and resource integrity.";
+            const verdict = self.intro_engine.verifyEpistemicConsistency(stmt);
+            const status_col = if (verdict.passed) "\x1b[38;2;49;196;141m✔ PROVEN" else "\x1b[38;2;255;107;53m⚠ FAILED PROOF";
+            std.debug.print("  • Invariant Status: {s}\x1b[0m (Verified: {d}, Failed: {d})\n", .{
+                status_col, verdict.verified_count, verdict.failed_count,
+            });
+            std.debug.print("  • Introspective Guidance: {s}\n\n", .{verdict.self_healing_steering});
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/morphic")) {
+            self.morph_weaver.listSynthesizedTools();
             return true;
         }
 
