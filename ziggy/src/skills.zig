@@ -29,7 +29,7 @@ pub const SkillManager = struct {
     }
 
     pub fn discoverSkills(self: *SkillManager) void {
-        // Register core built-in domain skills
+        // 1. Built-in Core Skills
         const builtin_skills = [_]SkillItem{
             .{ .name = "systematic-debugging", .description = "Root-cause investigation, invariant tracing, and non-destructive triage", .path = "builtin://debugging" },
             .{ .name = "tdd-workflow", .description = "Red-Green-Refactor test-driven development with zero-regression guards", .path = "builtin://tdd" },
@@ -42,13 +42,56 @@ pub const SkillManager = struct {
         for (builtin_skills) |s| {
             self.skills.append(self.allocator, s) catch {};
         }
+
+        // 2. Discover local skills from ~/.agent/skills/
+        const home = sys.Sys.getenv("HOME") orelse ".";
+        const home_len = std.mem.sliceTo(home, 0).len;
+        var skills_dir_buf: [512]u8 = undefined;
+        const skills_dir = std.fmt.bufPrint(&skills_dir_buf, "{s}/.agent/skills", .{home[0..home_len]}) catch return;
+
+        var cmd_buf: [1024]u8 = undefined;
+        const cmd = std.fmt.bufPrint(&cmd_buf, "ls -1 \"{s}\" 2>/dev/null | head -n 30", .{skills_dir}) catch return;
+        cmd_buf[cmd.len] = 0;
+
+        const pipe = sys.Sys.popen(@ptrCast(&cmd_buf[0]), "r") orelse return;
+        defer _ = sys.Sys.pclose(pipe);
+
+        var raw_buf: [4096]u8 = undefined;
+        const bytes_read = sys.Sys.fread(@ptrCast(&raw_buf[0]), 1, raw_buf.len - 1, pipe);
+        if (bytes_read > 0) {
+            raw_buf[bytes_read] = 0;
+            var lines = std.mem.splitScalar(u8, raw_buf[0..bytes_read], '\n');
+            while (lines.next()) |line| {
+                const tr = std.mem.trim(u8, line, " \t\r");
+                if (tr.len == 0) continue;
+
+                var exists = false;
+                for (self.skills.items) |existing| {
+                    if (std.mem.eql(u8, existing.name, tr)) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    const dup_name = self.allocator.dupe(u8, tr) catch continue;
+                    const path_alloc = std.fmt.allocPrint(self.allocator, "{s}/{s}/SKILL.md", .{ skills_dir, tr }) catch continue;
+
+                    self.skills.append(self.allocator, .{
+                        .name = dup_name,
+                        .description = "Local domain playbook loaded from ~/.agent/skills",
+                        .path = path_alloc,
+                        .is_loaded = false,
+                    }) catch {};
+                }
+            }
+        }
     }
 
     pub fn listSkills(self: *const SkillManager) void {
-        std.debug.print("\n{s}=== ZIGAGENT SKILL SYSTEM & SPECIALIZED PLAYBOOKS ==={s}\n", .{ tui.TUI.C_CYAN, tui.TUI.C_RESET });
+        std.debug.print("\n{s}=== ZIGAGENT SKILL SYSTEM & DOMAIN PLAYBOOKS ({d} Loaded) ==={s}\n", .{ tui.TUI.C_CYAN, self.skills.items.len, tui.TUI.C_RESET });
         for (self.skills.items) |s| {
             const status = if (s.is_loaded) "\x1b[38;2;49;196;141m[ACTIVE]\x1b[0m" else "\x1b[38;2;139;157;175m[READY]\x1b[0m";
-            std.debug.print("  • {s} \x1b[1;38;2;255;107;53m{s:<26}\x1b[0m : {s}\n", .{
+            std.debug.print("  • {s} \x1b[1;38;2;255;107;53m{s:<28}\x1b[0m : {s}\n", .{
                 status, s.name, s.description,
             });
         }
@@ -59,6 +102,11 @@ pub const SkillManager = struct {
         for (self.skills.items) |*s| {
             if (std.mem.eql(u8, s.name, name)) {
                 s.is_loaded = true;
+                if (!std.mem.startsWith(u8, s.path, "builtin://")) {
+                    if (sys.readEntireFile(self.allocator, s.path, 16384)) |doc| {
+                        self.active_skill_prompt = doc;
+                    }
+                }
                 std.debug.print("{s}✔ Activated skill playbook: {s}{s}\n", .{ tui.TUI.C_AQUA, name, tui.TUI.C_RESET });
                 return true;
             }

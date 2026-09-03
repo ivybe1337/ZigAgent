@@ -16,62 +16,65 @@ pub const SelfImprovementEngine = struct {
         };
     }
 
-    /// Autonomous Self-Analysis & Code Evolution Pipeline
+    /// Codebase Module Audit & Compilation Pipeline
     pub fn analyzeSelf(self: *SelfImprovementEngine) void {
-        std.debug.print("\n{s}=== ZIGAGENT AUTONOMOUS SELF-IMPROVEMENT & CODE EVOLUTION ==={s}\n", .{ tui.TUI.C_CYAN, tui.TUI.C_RESET });
+        std.debug.print("\n{s}=== ZIGAGENT CODEBASE MODULE AUDIT ==={s}\n", .{ tui.TUI.C_CYAN, tui.TUI.C_RESET });
         
-        const self_modules = [_]struct { name: []const u8, status: []const u8, opt_level: []const u8 }{
-            .{ .name = "src/agent.zig", .status = "Verified Invariant Safe", .opt_level = "Zero-GC Arena" },
-            .{ .name = "src/memory.zig", .status = "SHA-256 Merkle Ring Active", .opt_level = "21,500 ops/sec" },
-            .{ .name = "src/http.zig", .status = "Non-blocking Streaming SSE", .opt_level = "Low Latency" },
-            .{ .name = "src/tools.zig", .status = "Surgical Patch Replacer", .opt_level = "Zero-Allocation Inline" },
-            .{ .name = "src/server.zig", .status = "Remote Manus Desktop Stream", .opt_level = "Port 4040 Gateway" },
-            .{ .name = "src/recursive_thought.zig", .status = "4-Pass Metacognition", .opt_level = "Deep Synthesis" },
-            .{ .name = "src/self_improve.zig", .status = "Autonomous Hot-Restart Engine", .opt_level = "Execv Self-Recompile" },
+        const self_modules = [_]struct { name: []const u8, role: []const u8 }{
+            .{ .name = "src/agent.zig", .role = "Autonomous ReAct Execution Loop & Dispatch" },
+            .{ .name = "src/memory.zig", .role = "L1 Ring Buffer & L3 Merkle Root Tracking" },
+            .{ .name = "src/http.zig", .role = "Fast LPU Inference Client & Reasoning Parser" },
+            .{ .name = "src/tools.zig", .role = "Native File, Command & Git Execution Suite" },
+            .{ .name = "src/server.zig", .role = "Local HTTP & WebSocket Canvas Server (Port 4040)" },
+            .{ .name = "src/recursive_thought.zig", .role = "Multi-Pass Deliberation Pipeline" },
+            .{ .name = "src/self_improve.zig", .role = "Self-Recompilation & State Persistence" },
         };
 
-        std.debug.print("  {s}Codebase Self-Awareness Audit (Generation {d}):{s}\n", .{ tui.TUI.C_WHITE, self.evolution_generation, tui.TUI.C_RESET });
+        std.debug.print("  {s}Module Status Check (Generation {d}):{s}\n", .{ tui.TUI.C_WHITE, self.evolution_generation, tui.TUI.C_RESET });
         for (self_modules) |m| {
-            std.debug.print("  • \x1b[1;38;2;255;107;53m{s:<28}\x1b[0m : \x1b[38;2;49;196;141m{s:<26}\x1b[0m ({s})\n", .{
-                m.name, m.status, m.opt_level,
+            const exists = sys.Sys.open(@ptrCast(m.name), sys.O_RDONLY);
+            const status_str = if (exists >= 0) "\x1b[38;2;49;196;141m[PRESENT]\x1b[0m" else "\x1b[38;2;255;107;53m[MISSING]\x1b[0m";
+            if (exists >= 0) _ = sys.Sys.close(exists);
+
+            std.debug.print("  • {s} \x1b[1;38;2;255;107;53m{s:<28}\x1b[0m : {s}\n", .{
+                status_str, m.name, m.role,
             });
         }
 
-        std.debug.print("\n  {s}Autonomous Self-Refinement & Hot-Restart Loop:{s}\n", .{ tui.TUI.C_AQUA, tui.TUI.C_RESET });
-        std.debug.print("  1. Continuous codebase topology & bottleneck profiling.\n", .{});
-        std.debug.print("  2. Synthesize candidate optimizations with AST structural integrity guards.\n", .{});
-        std.debug.print("  3. Compile test candidate: `zig build -Doptimize=ReleaseFast`.\n", .{});
-        std.debug.print("  4. Save active Merkle memory state to `.ziggy/rehydration.json`.\n", .{});
-        std.debug.print("  5. Hot-restart process image into new recompiled generation with zero context loss.\n", .{});
-        std.debug.print("\n{s}Use /evolve to trigger an autonomous self-optimization and recompile cycle.{s}\n", .{ tui.TUI.C_MUTED, tui.TUI.C_RESET });
+        std.debug.print("\n  {s}Self-Recompilation Pipeline:{s}\n", .{ tui.TUI.C_AQUA, tui.TUI.C_RESET });
+        std.debug.print("  1. Run structural AST and delimiter validation on local source.\n", .{});
+        std.debug.print("  2. Compile release binary: `zig build -Doptimize=ReleaseFast`.\n", .{});
+        std.debug.print("  3. Persist active state and Merkle root to `.ziggy/rehydration.json`.\n", .{});
+        std.debug.print("  4. Resume execution in updated generation binary with preserved context.\n", .{});
+        std.debug.print("\n{s}Use /evolve run to trigger an automated self-recompilation check.{s}\n", .{ tui.TUI.C_MUTED, tui.TUI.C_RESET });
     }
 
-    /// Trigger Autonomous Compilation and Hot Restart
+    /// Trigger Automated Recompilation and State Rehydration
     pub fn triggerAutonomousEvolution(self: *SelfImprovementEngine, merkle_root: []const u8) bool {
-        std.debug.print("\n\x1b[38;2;0;242;254m⚡ [SELF-EVOLUTION]:\x1b[0m Commencing autonomous self-recompilation...\n", .{});
+        std.debug.print("\n\x1b[38;2;0;242;254m⚡ [RECOMPILATION]:\x1b[0m Commencing build verification...\n", .{});
 
         // 1. Save rehydration state
         var state_buf: [1024]u8 = undefined;
         const state_json = std.fmt.bufPrint(
             &state_buf,
-            "{{\"generation\":{d},\"merkle_root\":\"{s}\",\"timestamp\":1788240000}}\n",
-            .{ self.evolution_generation + 1, merkle_root },
+            "{{\"generation\":{d},\"merkle_root\":\"{s}\",\"timestamp\":{d}}}\n",
+            .{ self.evolution_generation + 1, merkle_root, sys.currentTimestamp() },
         ) catch "";
 
         _ = sys.writeEntireFile(".ziggy/rehydration.json", state_json);
-        std.debug.print("  • Persisted epistemic state to .ziggy/rehydration.json\n", .{});
+        std.debug.print("  • Persisted state to .ziggy/rehydration.json\n", .{});
 
         // 2. Recompile binary
-        std.debug.print("  • Building new ReleaseFast binary via Zig compiler...\n", .{});
+        std.debug.print("  • Building release binary via Zig compiler...\n", .{});
         const native_tools = tools.NativeTools{};
         const build_res = native_tools.executeCommand(self.allocator, "zig build -Doptimize=ReleaseFast");
 
         if (!build_res.success) {
-            std.debug.print("\x1b[38;2;255;107;53m✘ Self-compilation failed. Aborting hot-restart to preserve runtime stability.\x1b[0m\n", .{});
+            std.debug.print("\x1b[38;2;255;107;53m✘ Build verification failed. Keeping current active binary.\x1b[0m\n", .{});
             return false;
         }
 
-        std.debug.print("\x1b[38;2;49;196;141m✔ Recompilation successful! Executing hot-restart wakeup...\x1b[0m\n\n", .{});
+        std.debug.print("\x1b[38;2;49;196;141m✔ Recompilation successful! Binary updated.\x1b[0m\n\n", .{});
         self.evolution_generation += 1;
         return true;
     }

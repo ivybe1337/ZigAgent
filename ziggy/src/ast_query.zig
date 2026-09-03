@@ -37,13 +37,13 @@ pub const AstQueryEngine = struct {
 
     /// Fast structural symbol search across codebase
     pub fn querySymbols(self: *AstQueryEngine, query: []const u8, search_dir: []const u8, out_list: *std.ArrayList(AstSymbol)) void {
-        _ = search_dir;
-        // Search Zig source files
+        const target_dir = if (search_dir.len == 0) "src" else search_dir;
+
         var cmd_buf: [2048]u8 = undefined;
         const cmd = std.fmt.bufPrint(
             &cmd_buf,
-            "grep -rn -E \"(pub fn|pub const|const|pub struct|pub enum) \" src/ | head -n 40",
-            .{},
+            "grep -rn -E \"(pub fn|pub const|const|pub struct|pub enum) \" \"{s}\" 2>/dev/null | head -n 40",
+            .{target_dir},
         ) catch return;
 
         cmd_buf[cmd.len] = 0;

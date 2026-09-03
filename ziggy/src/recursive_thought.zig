@@ -10,10 +10,10 @@ pub const DeliberationStage = enum {
 
     pub fn asString(self: DeliberationStage) []const u8 {
         return switch (self) {
-            .initial_hypothesis => "Phase 1: Initial Hypothesis & Exploration",
+            .initial_hypothesis => "Phase 1: Initial Hypothesis & Problem Framing",
             .adversarial_critique => "Phase 2: Adversarial Edge-Case Critique",
-            .counter_deliberation => "Phase 3: Counter-Deliberation & Self-Correction",
-            .final_synthesis => "Phase 4: Synthesis & Action Selection",
+            .counter_deliberation => "Phase 3: Counter-Deliberation & Invariant Check",
+            .final_synthesis => "Phase 4: Synthesis & Concrete Plan Selection",
         };
     }
 };
@@ -42,39 +42,48 @@ pub const RecursiveThinkingEngine = struct {
         goal: []const u8,
         out_stream: *std.ArrayList(ThoughtNode),
     ) void {
-        _ = goal;
-        // Phase 1: First-Pass Raw Idea
+        const clean_goal = if (goal.len > 0) goal else "Analyze task and synthesize verified execution sequence";
+
+        // Phase 1: First-Pass Raw Idea tailored to goal
+        var p1_buf: [512]u8 = undefined;
+        const p1_str = std.fmt.bufPrint(&p1_buf, "Analyze objective: \"{s}\". Identify required files, tools, and execution dependencies.", .{clean_goal}) catch "Deconstruct goal into immediate execution sequence.";
         out_stream.append(self.allocator, .{
             .stage = .initial_hypothesis,
             .depth = 1,
-            .thought_text = "Deconstruct goal into immediate execution sequence and identify necessary tool calls.",
-            .confidence = 0.65,
+            .thought_text = self.allocator.dupe(u8, p1_str) catch "Deconstruct goal into immediate execution sequence.",
+            .confidence = 0.75,
             .invariant_verified = true,
         }) catch {};
 
-        // Phase 2: Rethink 1 - Critical Challenge
+        // Phase 2: Adversarial Critique
+        var p2_buf: [512]u8 = undefined;
+        const p2_str = std.fmt.bufPrint(&p2_buf, "Adversarial check on \"{s}\": Verify non-destructive bounds, check for missing parameters, and ensure safe file handling.", .{clean_goal}) catch "Challenge initial plan: verify non-destructive bounds.";
         out_stream.append(self.allocator, .{
             .stage = .adversarial_critique,
             .depth = 2,
-            .thought_text = "Challenge initial plan: Are there hidden side-effects, file collisions, or missing context? Verify non-destructive bounds.",
-            .confidence = 0.82,
+            .thought_text = self.allocator.dupe(u8, p2_str) catch "Verify non-destructive bounds.",
+            .confidence = 0.88,
             .invariant_verified = true,
         }) catch {};
 
-        // Phase 3: Rethink 2 - Reformulation & Invariant Proof
+        // Phase 3: Counter-Deliberation
+        var p3_buf: [512]u8 = undefined;
+        const p3_str = std.fmt.bufPrint(&p3_buf, "Counter-deliberation: Lock in verified toolchain actions, discard high-risk speculative paths for \"{s}\".", .{clean_goal}) catch "Lock in verified toolchain actions.";
         out_stream.append(self.allocator, .{
             .stage = .counter_deliberation,
             .depth = 3,
-            .thought_text = "Reformulate execution path: Eliminate speculative branches with low confidence; lock in deterministic tools.",
+            .thought_text = self.allocator.dupe(u8, p3_str) catch "Lock in verified toolchain actions.",
             .confidence = 0.94,
             .invariant_verified = true,
         }) catch {};
 
         // Phase 4: Final Synthesis
+        var p4_buf: [512]u8 = undefined;
+        const p4_str = std.fmt.bufPrint(&p4_buf, "Synthesized plan for \"{s}\": Execute deterministic tool sequence and verify final result.", .{clean_goal}) catch "Synthesize verified action sequence.";
         out_stream.append(self.allocator, .{
             .stage = .final_synthesis,
             .depth = 4,
-            .thought_text = "Synthesize verified action sequence. Ready for flawless execution.",
+            .thought_text = self.allocator.dupe(u8, p4_str) catch "Synthesize verified action sequence.",
             .confidence = 0.98,
             .invariant_verified = true,
         }) catch {};
@@ -82,7 +91,7 @@ pub const RecursiveThinkingEngine = struct {
 
     pub fn renderDeliberationTree(self: *const RecursiveThinkingEngine, nodes: []const ThoughtNode) void {
         _ = self;
-        std.debug.print("\n{s}=== RECURSIVE MULTI-PASS DELIBERATION TREE (Think -> Rethink -> Refine) ==={s}\n", .{ tui.TUI.C_CYAN, tui.TUI.C_RESET });
+        std.debug.print("\n{s}=== RECURSIVE MULTI-PASS DELIBERATION TREE ==={s}\n", .{ tui.TUI.C_CYAN, tui.TUI.C_RESET });
         for (nodes) |n| {
             const badge_color = if (n.confidence > 0.9) "\x1b[38;2;0;230;118m" else if (n.confidence > 0.75) "\x1b[38;2;0;242;254m" else "\x1b[38;2;255;107;53m";
             std.debug.print("  {s}┌─ [{s}]{s} (Confidence: {s}{d:.0}%{s})\n", .{

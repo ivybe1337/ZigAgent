@@ -17,7 +17,7 @@ pub const ToolchainItem = struct {
 
 pub const NativeTools = struct {
     pub fn readFile(_: NativeTools, alloc: std.mem.Allocator, path: []const u8) ToolResult {
-        if (sys.readEntireFile(alloc, path, 1024 * 1024)) |data| {
+        if (sys.readEntireFile(alloc, path, 1024 * 1024 * 4)) |data| {
             return .{
                 .success = true,
                 .output = data,
@@ -47,7 +47,7 @@ pub const NativeTools = struct {
     }
 
     pub fn editFile(self: NativeTools, alloc: std.mem.Allocator, path: []const u8, target: []const u8, replacement: []const u8) ToolResult {
-        const file_content = sys.readEntireFile(alloc, path, 1024 * 1024) orelse {
+        const file_content = sys.readEntireFile(alloc, path, 1024 * 1024 * 4) orelse {
             return .{ .success = false, .output = "", .error_msg = "Target file could not be read." };
         };
         defer alloc.free(file_content);
@@ -147,16 +147,37 @@ pub const NativeTools = struct {
         return self.executeCommand(alloc, "git log -n 10 --oneline");
     }
 
-    pub fn deterministicAnalyzeProject(_: NativeTools, alloc: std.mem.Allocator, path: []const u8) ToolResult {
-        _ = path;
+    /// Real project topology scan measuring actual file counts, LOC, and git status
+    pub fn deterministicAnalyzeProject(self: NativeTools, alloc: std.mem.Allocator, path: []const u8) ToolResult {
+        const target = if (path.len == 0) "." else path;
+        
         var summary = std.ArrayList(u8).initCapacity(alloc, 2048) catch {
             return .{ .success = false, .output = "", .error_msg = "Memory error" };
         };
+
+        const file_count_cmd = std.fmt.allocPrint(alloc, "find \"{s}\" -type f ! -path '*/.*' ! -path '*/zig-out/*' ! -path '*/.zig-cache/*' | wc -l", .{target}) catch "find . -type f | wc -l";
+        defer alloc.free(file_count_cmd);
+        const fcount_res = self.executeCommand(alloc, file_count_cmd);
+
+        const loc_cmd = std.fmt.allocPrint(alloc, "find \"{s}\" -name '*.zig' -o -name '*.m' -o -name '*.h' -o -name '*.c' | xargs wc -l 2>/dev/null | tail -n 1", .{target}) catch "wc -l";
+        defer alloc.free(loc_cmd);
+        const loc_res = self.executeCommand(alloc, loc_cmd);
+
+        const git_branch_res = self.executeCommand(alloc, "git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '(not a git repo)'");
+        const git_commit_res = self.executeCommand(alloc, "git rev-parse --short HEAD 2>/dev/null || echo 'N/A'");
+
         summary.appendSlice(alloc, "=== PROJECT TOPOLOGY & ARCHITECTURE REPORT ===\n") catch {};
-        summary.appendSlice(alloc, "• Runtime: Pure Native Zig 0.16.0 (Zero-GC, Step Arena Memory)\n") catch {};
-        summary.appendSlice(alloc, "• Execution Engine: Unbounded ReAct loop with POSIX pipe IPC\n") catch {};
-        summary.appendSlice(alloc, "• Memory Model: Thermodynamic L1 Hot Ring + L3 SHA-256 Merkle Engrams\n") catch {};
-        summary.appendSlice(alloc, "• Invariant Status: 4 verification gates passed (Build, Memory, Syntax, Consensus)\n") catch {};
+        summary.appendSlice(alloc, "• Target Path: ") catch {};
+        summary.appendSlice(alloc, target) catch {};
+        summary.appendSlice(alloc, "\n• Total Tracked Files: ") catch {};
+        summary.appendSlice(alloc, std.mem.trim(u8, fcount_res.output, " \t\r\n")) catch {};
+        summary.appendSlice(alloc, "\n• Total Source LOC: ") catch {};
+        summary.appendSlice(alloc, std.mem.trim(u8, loc_res.output, " \t\r\n")) catch {};
+        summary.appendSlice(alloc, "\n• Git Branch: ") catch {};
+        summary.appendSlice(alloc, std.mem.trim(u8, git_branch_res.output, " \t\r\n")) catch {};
+        summary.appendSlice(alloc, " (Commit: ") catch {};
+        summary.appendSlice(alloc, std.mem.trim(u8, git_commit_res.output, " \t\r\n")) catch {};
+        summary.appendSlice(alloc, ")\n• Compiler: Native Zig 0.16.0 (Zero-GC Step Arena Memory Model)\n") catch {};
 
         return .{
             .success = true,
@@ -201,28 +222,28 @@ pub const NativeTools = struct {
             const p = extractJsonField(json, "path") orelse "";
             const c = extractJsonField(json, "content") orelse "";
             return self.writeFile(p, c);
-        } else if (std.mem.indexOf(u8, json, "\"edit_file\"") != null or std.mem.indexOf(u8, json, "\"replace_file_content\"") != null) {
+        } else if (std.mem.indexOf(u8, json, "\"edit_file\"") != null) {
             const p = extractJsonField(json, "path") orelse "";
-            const target = extractJsonField(json, "target") orelse extractJsonField(json, "target_content") orelse "";
-            const repl = extractJsonField(json, "replacement") orelse extractJsonField(json, "replacement_content") orelse "";
+            const target = extractJsonField(json, "target") orelse "";
+            const repl = extractJsonField(json, "replacement") orelse "";
             return self.editFile(alloc, p, target, repl);
-        } else if (std.mem.indexOf(u8, json, "\"run_command\"") != null or std.mem.indexOf(u8, json, "\"exec\"") != null) {
-            const c = extractJsonField(json, "command") orelse extractJsonField(json, "cmd") orelse "";
-            return self.executeCommand(alloc, c);
+        } else if (std.mem.indexOf(u8, json, "\"run_command\"") != null) {
+            const cmd = extractJsonField(json, "command") orelse "";
+            return self.executeCommand(alloc, cmd);
         } else if (std.mem.indexOf(u8, json, "\"list_dir\"") != null) {
             const p = extractJsonField(json, "path") orelse ".";
             return self.listDir(alloc, p);
-        } else if (std.mem.indexOf(u8, json, "\"grep_search\"") != null or std.mem.indexOf(u8, json, "\"grep\"") != null) {
+        } else if (std.mem.indexOf(u8, json, "\"grep_search\"") != null) {
             const q = extractJsonField(json, "query") orelse "";
             const p = extractJsonField(json, "path") orelse ".";
             return self.grepSearch(alloc, q, p);
         } else if (std.mem.indexOf(u8, json, "\"find_files\"") != null) {
-            const pat = extractJsonField(json, "pattern") orelse "*";
+            const pattern = extractJsonField(json, "pattern") orelse "*";
             const p = extractJsonField(json, "path") orelse ".";
-            return self.findFiles(alloc, pat, p);
-        } else if (std.mem.indexOf(u8, json, "\"fetch_web\"") != null or std.mem.indexOf(u8, json, "\"web\"") != null) {
-            const u = extractJsonField(json, "url") orelse "";
-            return self.fetchWeb(alloc, u);
+            return self.findFiles(alloc, pattern, p);
+        } else if (std.mem.indexOf(u8, json, "\"fetch_web\"") != null) {
+            const url = extractJsonField(json, "url") orelse "";
+            return self.fetchWeb(alloc, url);
         } else if (std.mem.indexOf(u8, json, "\"git_status\"") != null) {
             return self.gitStatus(alloc);
         } else if (std.mem.indexOf(u8, json, "\"git_diff\"") != null) {
@@ -230,53 +251,43 @@ pub const NativeTools = struct {
         } else if (std.mem.indexOf(u8, json, "\"git_log\"") != null) {
             return self.gitLog(alloc);
         } else if (std.mem.indexOf(u8, json, "\"git_commit\"") != null) {
-            const msg = extractJsonField(json, "message") orelse "Update from Ziggy";
+            const msg = extractJsonField(json, "message") orelse "update from zigagent";
             var cmd_buf: [1024]u8 = undefined;
-            const cmd = std.fmt.bufPrint(&cmd_buf, "git commit -am \"{s}\"", .{msg}) catch "git commit -m 'Update'";
+            const cmd = std.fmt.bufPrint(&cmd_buf, "git commit -m \"{s}\"", .{msg}) catch return .{ .success = false, .output = "", .error_msg = "Command buffer overflow" };
             return self.executeCommand(alloc, cmd);
         }
 
         return .{
             .success = false,
             .output = "",
-            .error_msg = "Unknown tool call requested.",
+            .error_msg = "Unrecognized tool format or missing tool name.",
         };
     }
+};
 
-    fn extractJsonField(json: []const u8, field: []const u8) ?[]const u8 {
-        var pattern_buf: [64]u8 = undefined;
-        const pattern = std.fmt.bufPrint(&pattern_buf, "\"{s}\":", .{field}) catch return null;
-        const pos = std.mem.indexOf(u8, json, pattern) orelse return null;
-        const after = json[pos + pattern.len ..];
-        var start_idx: usize = 0;
-        while (start_idx < after.len and (after[start_idx] == ' ' or after[start_idx] == '\t' or after[start_idx] == '\r' or after[start_idx] == '\n')) : (start_idx += 1) {}
-        if (start_idx >= after.len) return null;
+pub fn extractJsonField(json: []const u8, field: []const u8) ?[]const u8 {
+    var pat_buf: [128]u8 = undefined;
+    const pat = std.fmt.bufPrint(&pat_buf, "\"{s}\":", .{field}) catch return null;
 
-        const trimmed = after[start_idx..];
-        if (trimmed[0] == '"') {
-            const str_start: usize = 1;
-            var str_end: usize = str_start;
+    if (std.mem.indexOf(u8, json, pat)) |idx| {
+        const after_key = json[idx + pat.len ..];
+        var start: usize = 0;
+        while (start < after_key.len and (after_key[start] == ' ' or after_key[start] == '\t')) : (start += 1) {}
+
+        if (start < after_key.len and after_key[start] == '"') {
+            start += 1;
+            var end = start;
             var escaped = false;
-            while (str_end < trimmed.len) {
-                const ch = trimmed[str_end];
-                if (ch == '\\') {
+            while (end < after_key.len) : (end += 1) {
+                if (after_key[end] == '\\') {
                     escaped = !escaped;
-                } else if (ch == '"' and !escaped) {
-                    return trimmed[str_start..str_end];
+                } else if (after_key[end] == '"' and !escaped) {
+                    return after_key[start..end];
                 } else {
                     escaped = false;
                 }
-                str_end += 1;
             }
-            return trimmed[str_start..str_end];
         }
-
-        // Numeric or boolean or object
-        var end_idx: usize = 0;
-        while (end_idx < trimmed.len) : (end_idx += 1) {
-            const ch = trimmed[end_idx];
-            if (ch == ',' or ch == '}' or ch == '\n' or ch == '\r') break;
-        }
-        return std.mem.trim(u8, trimmed[0..end_idx], " \t\r\n");
     }
-};
+    return null;
+}

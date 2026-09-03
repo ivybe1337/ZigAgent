@@ -53,17 +53,16 @@ pub const McpManager = struct {
         const content = sys.readEntireFile(self.allocator, config_path, 8192);
         if (content) |json_str| {
             defer self.allocator.free(json_str);
-            // Parse server entries
             var lines = std.mem.splitScalar(u8, json_str, '\n');
             while (lines.next()) |line| {
                 const tr = std.mem.trim(u8, line, " \t\r,");
                 if (std.mem.indexOf(u8, tr, "\"command\":") != null) {
-                    // Register dynamic MCP tool
+                    // Register dynamic server entry if configured
                 }
             }
         }
 
-        // Register default built-in OmniLattice MCP bridge
+        // Register default OmniLattice tools
         self.tools.append(self.allocator, .{
             .server_name = "omnilattice",
             .name = "omnilattice_forest_get",
@@ -91,9 +90,9 @@ pub const McpManager = struct {
         cmd_buf[cmd.len] = 0;
         const cmd_z: [*:0]const u8 = @ptrCast(cmd_buf[0..cmd.len]);
         const pipe = sys.Sys.popen(cmd_z, "r") orelse {
-            const fallback = "✔ Simulated MCP execution: Operation completed successfully.";
-            const len = @min(fallback.len, out_buf.len);
-            @memcpy(out_buf[0..len], fallback[0..len]);
+            const err_msg = "Error: MCP server could not be spawned.";
+            const len = @min(err_msg.len, out_buf.len);
+            @memcpy(out_buf[0..len], err_msg[0..len]);
             return len;
         };
         defer _ = sys.Sys.pclose(pipe);
@@ -107,9 +106,9 @@ pub const McpManager = struct {
         }
 
         if (total_read == 0) {
-            const fallback = "✔ MCP Tool Invoked successfully.";
-            const len = @min(fallback.len, out_buf.len);
-            @memcpy(out_buf[0..len], fallback[0..len]);
+            const err_msg = "Error: MCP tool returned empty response or server exited.";
+            const len = @min(err_msg.len, out_buf.len);
+            @memcpy(out_buf[0..len], err_msg[0..len]);
             return len;
         }
 
@@ -125,7 +124,7 @@ pub const McpManager = struct {
         }
 
         for (self.tools.items) |t| {
-            std.debug.print("  {s}• [{s}]{s} \x1b[1m{s}\x1b[0m: {s}\n", .{
+            std.debug.print("  • {s}[{s}]{s} \x1b[1m{s}\x1b[0m: {s}\n", .{
                 tui.TUI.C_AQUA, t.server_name, tui.TUI.C_RESET,
                 t.name, t.description,
             });

@@ -64,8 +64,8 @@
 
     // Window Setup: Ultra-crisp modern geometry
     NSRect screenRect = [[NSScreen mainScreen] visibleFrame];
-    CGFloat winW = @min(1380.0, screenRect.size.width - 60.0);
-    CGFloat winH = @min(880.0, screenRect.size.height - 60.0);
+    CGFloat winW = MIN(1380.0, screenRect.size.width - 60.0);
+    CGFloat winH = MIN(880.0, screenRect.size.height - 60.0);
     NSRect winRect = NSMakeRect((screenRect.size.width - winW) / 2.0, (screenRect.size.height - winH) / 2.0, winW, winH);
 
     self.window = [[NSWindow alloc] initWithContentRect:winRect
@@ -444,8 +444,9 @@
     editorScroll.hasVerticalScroller = YES;
     editorScroll.hasHorizontalScroller = YES;
     editorScroll.borderType = NSLineBorder;
-    editorScroll.borderColor = [self slateBorderColor];
     editorScroll.wantsLayer = YES;
+    editorScroll.layer.borderColor = [self slateBorderColor].CGColor;
+    editorScroll.layer.borderWidth = 1.0;
     editorScroll.layer.cornerRadius = 8.0;
 
     self.codeEditorTextView = [[NSTextView alloc] initWithFrame:editorScroll.bounds];
@@ -635,8 +636,9 @@
     termScroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     termScroll.hasVerticalScroller = YES;
     termScroll.borderType = NSLineBorder;
-    termScroll.borderColor = [self slateBorderColor];
     termScroll.wantsLayer = YES;
+    termScroll.layer.borderColor = [self slateBorderColor].CGColor;
+    termScroll.layer.borderWidth = 1.0;
     termScroll.layer.cornerRadius = 8.0;
 
     self.terminalOutputTextView = [[NSTextView alloc] initWithFrame:termScroll.bounds];
