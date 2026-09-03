@@ -236,6 +236,10 @@ pub const ModelBrowser = struct {
         _ = sys.Sys.tcsetattr(0, sys.TCSANOW, &term_raw);
         defer _ = sys.Sys.tcsetattr(0, sys.TCSANOW, &term_orig);
 
+        // Switch to isolated alternate screen buffer & hide cursor (prevents scrollback spam)
+        _ = sys.Sys.write(1, "\x1b[?1049h\x1b[?25l", 14);
+        defer _ = sys.Sys.write(1, "\x1b[?25h\x1b[?1049l", 14);
+
         const page_size: usize = 10;
         var view_offset: usize = 0;
 
@@ -308,7 +312,7 @@ pub const ModelBrowser = struct {
 
         const hdr = std.fmt.bufPrint(
             buf[cursor..],
-            "\x1b[2J\x1b[H" ++
+            "\x1b[H\x1b[2J" ++
             "{s}╭─────────────────────────────────────────────────────────────────────────────────────────────╮{s}\n" ++
             "{s}│                     ⚡ OPENROUTER & FRONTIER MODEL SELECTION BROWSER                       │{s}\n" ++
             "{s}├─────────────────────────────────────────────────────────────────────────────────────────────┤{s}\n" ++

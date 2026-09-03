@@ -155,6 +155,16 @@ pub const AuthVault = struct {
         const content = sys.readEntireFile(self.allocator, path, 8192) orelse return;
         defer self.allocator.free(content);
 
+        if (std.mem.indexOf(u8, content, "\"active_provider\": \"")) |idx| {
+            const start = idx + "\"active_provider\": \"".len;
+            if (std.mem.indexOfScalar(u8, content[start..], '"')) |end_idx| {
+                const prov_str = content[start .. start + end_idx];
+                if (ProviderType.parse(prov_str)) |p| {
+                    self.config.provider = p;
+                }
+            }
+        }
+
         self.extractKeyFromJson(content, "\"openrouter_key\": \"", .openrouter);
         self.extractKeyFromJson(content, "\"groq_key\": \"", .groq);
         self.extractKeyFromJson(content, "\"anthropic_key\": \"", .anthropic);

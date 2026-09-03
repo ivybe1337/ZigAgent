@@ -35,6 +35,7 @@ const thermodynamic_memory = @import("thermodynamic_memory.zig");
 const bifurcation = @import("bifurcation.zig");
 const introspective_engine = @import("introspective_engine.zig");
 const morphogenetic = @import("morphogenetic.zig");
+const tips = @import("tips.zig");
 
 pub const Repl = struct {
     allocator: std.mem.Allocator,
@@ -63,6 +64,7 @@ pub const Repl = struct {
     intro_engine: introspective_engine.IntrospectiveEngine,
     morph_weaver: morphogenetic.MorphogeneticWeaver,
     history: std.ArrayList([]const u8),
+    chat_history: std.ArrayList(http.ChatMessage),
     active_model: []const u8 = "openai/gpt-oss-120b",
 
     pub fn init(allocator: std.mem.Allocator) Repl {
@@ -96,6 +98,7 @@ pub const Repl = struct {
             .intro_engine = introspective_engine.IntrospectiveEngine.init(allocator),
             .morph_weaver = morphogenetic.MorphogeneticWeaver.init(allocator),
             .history = .empty,
+            .chat_history = .empty,
             .active_model = "openai/gpt-oss-120b",
         };
     }
@@ -108,6 +111,15 @@ pub const Repl = struct {
         self.eye.deinit();
         self.thermo_mem.deinit();
         self.morph_weaver.deinit();
+        for (self.chat_history.items) |msg| {
+            self.allocator.free(msg.role);
+            self.allocator.free(msg.content);
+        }
+        self.chat_history.deinit(self.allocator);
+        for (self.history.items) |h| {
+            self.allocator.free(h);
+        }
+        self.history.deinit(self.allocator);
     }
 
     pub fn run(self: *Repl) !void {
@@ -195,6 +207,8 @@ pub const Repl = struct {
             tui.TUI.C_BORDER, tui.TUI.C_RESET,
         });
 
+        std.debug.print("  {s}💡 Tip: {s}{s}\n\n", .{ tui.TUI.C_MUTED, tips.getNextTip(), tui.TUI.C_RESET });
+
         // Check if waking up from a hot-restart recompile
         if (sys.readEntireFile(self.allocator, ".ziggy/rehydration.json", 1024)) |rehyd_json| {
             defer self.allocator.free(rehyd_json);
@@ -212,6 +226,16 @@ pub const Repl = struct {
         if (std.mem.eql(u8, cmd, "/exit") or std.mem.eql(u8, cmd, "/quit")) {
             std.debug.print("{s}Goodbye!{s}\n", .{ tui.TUI.C_MUTED, tui.TUI.C_RESET });
             return false;
+        }
+
+        if (std.mem.eql(u8, cmd, "/reset") or std.mem.eql(u8, cmd, "/clear_history") or std.mem.eql(u8, cmd, "/new")) {
+            for (self.chat_history.items) |msg| {
+                self.allocator.free(msg.role);
+                self.allocator.free(msg.content);
+            }
+            self.chat_history.clearRetainingCapacity();
+            std.debug.print("{s}✔ Conversation history cleared. Starting a fresh session context.{s}\n", .{ tui.TUI.C_AQUA, tui.TUI.C_RESET });
+            return true;
         }
 
         if (std.mem.eql(u8, cmd, "/settings") or std.mem.eql(u8, cmd, "/config")) {
@@ -432,6 +456,9 @@ pub const Repl = struct {
                 "  {s}🩺 SYSTEM & TOOLS:{s}\n" ++
                 "    \x1b[38;2;255;107;53m/doctor\x1b[0m                 Audit toolchains (Zig, Git, cURL, Bun, Python3, Rust, Clang)\n" ++
                 "    \x1b[38;2;255;107;53m/keys\x1b[0m                   View AI provider authentication vault\n" ++
+                "    \x1b[38;2;255;107;53m/key <prov> <key>\x1b[0m       Set API key for provider (e.g. /key openrouter sk-or-...)\n" ++
+                "    \x1b[38;2;255;107;53m/provider <name>\x1b[0m        Switch active AI provider (e.g. /provider openrouter)\n" ++
+                "    \x1b[38;2;255;107;53m/reset\x1b[0m                  Clear conversation history & start fresh dialogue\n" ++
                 "    \x1b[38;2;255;107;53m/clear\x1b[0m                  Clear screen\n" ++
                 "    \x1b[38;2;255;107;53m/exit\x1b[0m                   Exit ZigAgent\n" ++
                 "─────────────────────────────────────────────────────────────────────────────\n",
@@ -673,6 +700,37 @@ pub const Repl = struct {
                     masked,
                 });
             }
+            std.debug.print("\n{s}Tip: Use /key <provider> <api_key> to set a key, or /provider <name> to switch provider.{s}\n", .{ tui.TUI.C_MUTED, tui.TUI.C_RESET });
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/key") or std.mem.eql(u8, cmd, "/setkey")) {
+            if (arg1 == null or arg2 == null) {
+                std.debug.print("{s}Usage: /key <provider> <api_key>{s}\nExample: /key openrouter sk-or-v1-...\n", .{ tui.TUI.C_ORANGE, tui.TUI.C_RESET });
+                return true;
+            }
+            if (auth.ProviderType.parse(arg1.?)) |p| {
+                self.vault.setKey(p, arg2.?);
+                self.vault.saveToVault();
+                std.debug.print("{s}✔ {s} key saved to {s}{s}\n", .{ tui.TUI.C_AQUA, p.asString(), self.vault.vault_path[0..self.vault.vault_path_len], tui.TUI.C_RESET });
+            } else {
+                std.debug.print("{s}Unknown provider: {s}. Valid options: openrouter, groq, anthropic, openai, gemini, huggingface{s}\n", .{ tui.TUI.C_ORANGE, arg1.?, tui.TUI.C_RESET });
+            }
+            return true;
+        }
+
+        if (std.mem.eql(u8, cmd, "/provider")) {
+            if (arg1 == null) {
+                std.debug.print("{s}Current active provider: {s}{s}\nUsage: /provider <openrouter|groq|anthropic|openai|gemini|huggingface>\n", .{ tui.TUI.C_CYAN, self.vault.config.provider.asString(), tui.TUI.C_RESET });
+                return true;
+            }
+            if (auth.ProviderType.parse(arg1.?)) |p| {
+                self.vault.config.provider = p;
+                self.vault.saveToVault();
+                std.debug.print("{s}✔ Active provider switched to: {s}{s}\n", .{ tui.TUI.C_AQUA, p.asString(), tui.TUI.C_RESET });
+            } else {
+                std.debug.print("{s}Unknown provider: {s}. Valid options: openrouter, groq, anthropic, openai, gemini, huggingface{s}\n", .{ tui.TUI.C_ORANGE, arg1.?, tui.TUI.C_RESET });
+            }
             return true;
         }
 
@@ -729,15 +787,16 @@ pub const Repl = struct {
     }
 
     fn executeAutonomousGoal(self: *Repl, user_directive: []const u8) void {
-        var current_prompt_buf: [16384]u8 = undefined;
-        const init_prompt = std.fmt.bufPrint(&current_prompt_buf, "{s}", .{user_directive}) catch user_directive;
-        var active_prompt_len: usize = init_prompt.len;
+        // 1. Record incoming user directive to active multi-turn conversation history
+        const dup_role = self.allocator.dupe(u8, "user") catch return;
+        const dup_content = self.allocator.dupe(u8, user_directive) catch return;
+        self.chat_history.append(self.allocator, .{ .role = dup_role, .content = dup_content }) catch return;
 
         var step: u32 = 0;
         const max_tool_steps: u32 = if (self.cfg_mgr.config.unbounded_autonomy or self.cfg_mgr.config.max_steps == 0)
             1000000
         else
-            self.cfg_mgr.config.max_steps;
+            @min(self.cfg_mgr.config.max_steps, 25);
 
         // Context Token & Compaction Threshold Check
         const hot_engrams: u32 = @intCast(self.engine.memory_store.hot_count);
@@ -761,13 +820,19 @@ pub const Repl = struct {
             }
         }
 
+        var last_tool_call_json: ?[]const u8 = null;
+        defer if (last_tool_call_json) |prev| self.allocator.free(prev);
+        var repeat_tool_count: usize = 0;
+
         while (step < max_tool_steps) : (step += 1) {
-            var response_buf: [16384]u8 = undefined;
-            const resp_len = http.HttpClient.queryInference(
+            std.debug.print("\n\x1b[38;2;255;184;108m⚡ [{s}]\x1b[0m\n", .{tips.getNextGoofyPhrase()});
+
+            var response_buf: [131072]u8 = undefined;
+            const resp_len = http.HttpClient.queryInferenceMessages(
                 self.allocator,
                 &self.vault,
                 self.active_model,
-                current_prompt_buf[0..active_prompt_len],
+                self.chat_history.items,
                 &response_buf,
             );
 
@@ -777,6 +842,12 @@ pub const Repl = struct {
             }
 
             const model_output = response_buf[0..resp_len];
+
+            // If API returned an error banner (e.g. invalid model or rate limit)
+            if (std.mem.startsWith(u8, model_output, "[OpenRouter API Error]: ")) {
+                std.debug.print("\n\x1b[38;2;255;107;53m{s}\x1b[0m\n", .{model_output});
+                break;
+            }
 
             // 1. Render Linear Thinking Transcript (<think>...</think>)
             if (std.mem.indexOf(u8, model_output, "<think>")) |t_start| {
@@ -803,6 +874,29 @@ pub const Repl = struct {
                     const tool_json = model_output[json_start .. json_start + call_end_rel];
                     const trimmed_tool_json = std.mem.trim(u8, tool_json, " \t\r\n");
 
+                    // Loop detection: intercept identical repeat calls
+                    if (last_tool_call_json) |prev| {
+                        if (std.mem.eql(u8, prev, trimmed_tool_json)) {
+                            repeat_tool_count += 1;
+                        } else {
+                            repeat_tool_count = 0;
+                        }
+                    }
+                    if (last_tool_call_json) |prev| self.allocator.free(prev);
+                    last_tool_call_json = self.allocator.dupe(u8, trimmed_tool_json) catch null;
+
+                    if (repeat_tool_count >= 2) {
+                        std.debug.print("\n\x1b[38;2;255;107;53m⚠ [LOOP DETECTED]:\x1b[0m Model invoked identical tool repeatedly. Halting tool loop and prompting for final synthesis.\n", .{});
+
+                        const ast_dup = self.allocator.dupe(u8, model_output) catch "";
+                        self.chat_history.append(self.allocator, .{ .role = "assistant", .content = ast_dup }) catch {};
+
+                        const err_feedback = "ERROR: You have already executed this exact tool call with identical arguments. Do NOT call this tool again. Synthesize your final response now.";
+                        const fb_dup = self.allocator.dupe(u8, err_feedback) catch "";
+                        self.chat_history.append(self.allocator, .{ .role = "user", .content = fb_dup }) catch {};
+                        continue;
+                    }
+
                     std.debug.print("\n\x1b[38;2;49;196;141m⚡ Action:\x1b[0m \x1b[1m{s}\x1b[0m\n", .{trimmed_tool_json});
 
                     // Dispatch tool execution
@@ -828,13 +922,19 @@ pub const Repl = struct {
                     else
                         tool_res.output;
 
-                    // Feed tool result back to model
-                    const next_p = std.fmt.bufPrint(
-                        &current_prompt_buf,
-                        "{s}\n\n<tool_call>\n{s}\n</tool_call>\n\n<tool_result>\n{s}\n</tool_result>\nNow analyze this result and complete the goal or invoke the next tool.",
-                        .{ user_directive, trimmed_tool_json, trimmed_tool_output },
-                    ) catch break;
-                    active_prompt_len = next_p.len;
+                    // Append assistant message and tool result to conversational history
+                    const dup_ast_call = self.allocator.dupe(u8, model_output) catch "";
+                    self.chat_history.append(self.allocator, .{ .role = "assistant", .content = dup_ast_call }) catch {};
+
+                    var tool_res_buf: [16384]u8 = undefined;
+                    const res_msg = std.fmt.bufPrint(
+                        &tool_res_buf,
+                        "<tool_result>\n{s}\n</tool_result>\nNow analyze this result and complete the goal or invoke the next tool.",
+                        .{trimmed_tool_output},
+                    ) catch trimmed_tool_output;
+
+                    const dup_tool_res = self.allocator.dupe(u8, res_msg) catch "";
+                    self.chat_history.append(self.allocator, .{ .role = "user", .content = dup_tool_res }) catch {};
                     continue;
                 }
             }
@@ -847,6 +947,11 @@ pub const Repl = struct {
             if (final_text.len > 0) {
                 std.debug.print("\n{s}\n", .{final_text});
             }
+
+            // Record assistant final message to conversation history
+            const dup_ast_final = self.allocator.dupe(u8, model_output) catch "";
+            self.chat_history.append(self.allocator, .{ .role = "assistant", .content = dup_ast_final }) catch {};
+
             self.engine.memory_store.recordTurn(user_directive, model_output, 0.95) catch {};
             if (self.cfg_mgr.config.verbosity == .full_transcript) {
                 std.debug.print("\n{s}⚡ [engram recorded] [merkle updated]{s}\n", .{ tui.TUI.C_MUTED, tui.TUI.C_RESET });

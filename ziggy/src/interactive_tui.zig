@@ -2,6 +2,7 @@ const std = @import("std");
 const sys = @import("sys.zig");
 const tui = @import("tui.zig");
 const config = @import("config.zig");
+const tips = @import("tips.zig");
 
 pub const SlashItem = struct {
     cmd: []const u8,
@@ -9,7 +10,20 @@ pub const SlashItem = struct {
 };
 
 pub const AVAILABLE_COMMANDS = [_]SlashItem{
+    .{ .cmd = "/model", .desc = "Switch or select active model via interactive picker" },
+    .{ .cmd = "/models", .desc = "Browse all frontier & stealth models" },
+    .{ .cmd = "/keys", .desc = "View AI provider authentication status" },
+    .{ .cmd = "/key", .desc = "Set provider API key: /key openrouter <key>" },
+    .{ .cmd = "/provider", .desc = "Switch active provider: /provider openrouter" },
+    .{ .cmd = "/reset", .desc = "Clear conversation history & start fresh dialogue" },
     .{ .cmd = "/settings", .desc = "Interactive settings & preferences panel" },
+    .{ .cmd = "/doctor", .desc = "Audit toolchains (Zig, Git, cURL, Bun, Python3, Clang)" },
+    .{ .cmd = "/help", .desc = "Show all command references and capabilities" },
+    .{ .cmd = "/minds_eye", .desc = "Spatial vision screen capture and computer use" },
+    .{ .cmd = "/thermo", .desc = "Thermodynamic memory entropy dissipation" },
+    .{ .cmd = "/bifurcate", .desc = "Bifurcate exploration tree into parallel paths" },
+    .{ .cmd = "/introspect", .desc = "Introspective metacognitive self-critique" },
+    .{ .cmd = "/morphic", .desc = "Morphogenetic codebase adaptation" },
     .{ .cmd = "/deliberate", .desc = "Run 4-pass recursive metacognitive deliberation" },
     .{ .cmd = "/swarm", .desc = "Execute 4-agent parallel swarm orchestration" },
     .{ .cmd = "/query", .desc = "Structural AST symbol query across codebase" },
@@ -27,8 +41,6 @@ pub const AVAILABLE_COMMANDS = [_]SlashItem{
     .{ .cmd = "/plugins", .desc = "Manage dynamic plugins & extensions" },
     .{ .cmd = "/omni", .desc = "OmniLattice context mesh & semantic forest" },
     .{ .cmd = "/unbounded", .desc = "Toggle unbounded infinite autonomy mode" },
-    .{ .cmd = "/models", .desc = "Browse all frontier & stealth models" },
-    .{ .cmd = "/model", .desc = "Switch active inference model" },
     .{ .cmd = "/compact", .desc = "Targeted context compaction" },
     .{ .cmd = "/speculate", .desc = "Multi-candidate speculative plan evaluator" },
     .{ .cmd = "/council", .desc = "3-Lens consensus evaluation (Security/Perf/Arch)" },
@@ -38,14 +50,27 @@ pub const AVAILABLE_COMMANDS = [_]SlashItem{
     .{ .cmd = "/timeline", .desc = "Inspect state snapshots in Time Machine" },
     .{ .cmd = "/ledger", .desc = "Cross-agent continuity ledger" },
     .{ .cmd = "/inbox", .desc = "Inter-agent mailbox inbox" },
-    .{ .cmd = "/keys", .desc = "AI provider credential status" },
-    .{ .cmd = "/doctor", .desc = "Check system toolchains & health" },
     .{ .cmd = "/clear", .desc = "Clear terminal screen" },
     .{ .cmd = "/exit", .desc = "Exit ZigAgent CLI" },
 };
 
+pub const COMMON_PROMPTS = [_][]const u8{
+    "refactor ",
+    "debug and fix ",
+    "explain how ",
+    "build and test ",
+    "analyze the architecture of ",
+    "optimize performance of ",
+    "implement feature ",
+    "write unit tests for ",
+    "review code in ",
+    "document the API in ",
+    "check git status and diff",
+    "search for ",
+};
+
 pub const InteractiveTUI = struct {
-    /// Safe, robust terminal input reader with ZERO password / raw mode interference
+    /// Interactive terminal input reader with TAB autocomplete for / commands, normal prompts, and history navigation
     pub fn readInputWithAutocomplete(
         allocator: std.mem.Allocator,
         prompt_prefix: []const u8,
@@ -54,24 +79,225 @@ pub const InteractiveTUI = struct {
     ) ?[]const u8 {
         _ = sys.Sys.write(1, prompt_prefix.ptr, prompt_prefix.len);
 
-        var buf: [4096]u8 = undefined;
-        var total_read: usize = 0;
-        while (total_read < buf.len - 1) {
+        var term_orig: sys.Termios = undefined;
+        const is_tty = (sys.Sys.tcgetattr(0, &term_orig) == 0);
+
+        if (is_tty) {
+            var term_raw = term_orig;
+            term_raw.c_lflag &= ~(sys.DARWIN_ICANON | sys.DARWIN_ECHO);
+            term_raw.c_cc[sys.VMIN] = 0;
+            term_raw.c_cc[sys.VTIME] = 60; // 6.0s timeout to circulate tips while sitting idle
+            _ = sys.Sys.tcsetattr(0, sys.TCSANOW, &term_raw);
+        }
+        defer if (is_tty) {
+            _ = sys.Sys.tcsetattr(0, sys.TCSANOW, &term_orig);
+        };
+
+        _ = sys.Sys.write(1, "\x1b[?2004h", 8);
+        defer _ = sys.Sys.write(1, "\x1b[?2004l", 8);
+
+        var buf: [65536]u8 = undefined;
+        var cursor: usize = 0;
+        var in_paste = false;
+
+        var history_idx: isize = @intCast(history.items.len);
+        var esc_buf: [8]u8 = undefined;
+        var esc_len: usize = 0;
+
+        while (cursor < buf.len - 1) {
             var ch: [1]u8 = undefined;
             const r = sys.Sys.read(0, &ch, 1);
             if (r <= 0) {
-                if (total_read == 0) return null;
-                break;
+                if (!is_tty) {
+                    if (cursor == 0) return null;
+                    break;
+                }
+                // Idle timer triggered: circulate an informative tip if user is sitting idle at empty prompt
+                if (cursor == 0 and !in_paste) {
+                    const tip = tips.getNextTip();
+                    _ = sys.Sys.write(1, "\r\x1b[K\x1b[38;2;120;140;165m💡 Tip: \x1b[38;2;160;185;210m", 45);
+                    _ = sys.Sys.write(1, tip.ptr, tip.len);
+                    _ = sys.Sys.write(1, "\x1b[0m\r\n", 6);
+                    _ = sys.Sys.write(1, prompt_prefix.ptr, prompt_prefix.len);
+                }
+                continue;
             }
-            if (ch[0] == '\n' or ch[0] == '\r') {
-                break;
-            }
-            buf[total_read] = ch[0];
-            total_read += 1;
-        }
-        buf[total_read] = 0;
 
-        const raw_slice = buf[0..total_read];
+            // 1. Bracketed paste & escape sequences (arrow keys, etc.)
+            if (esc_len > 0 or ch[0] == 27) {
+                if (esc_len < esc_buf.len) {
+                    esc_buf[esc_len] = ch[0];
+                    esc_len += 1;
+                }
+                const cur_esc = esc_buf[0..esc_len];
+                if (std.mem.eql(u8, cur_esc, "\x1b[200~")) {
+                    in_paste = true;
+                    esc_len = 0;
+                    continue;
+                } else if (std.mem.eql(u8, cur_esc, "\x1b[201~")) {
+                    in_paste = false;
+                    esc_len = 0;
+                    continue;
+                } else if (esc_len == 3 and cur_esc[1] == '[') {
+                    // Arrow UP (history previous)
+                    if (cur_esc[2] == 'A') {
+                        if (history.items.len > 0 and history_idx > 0) {
+                            history_idx -= 1;
+                            const prev = history.items[@intCast(history_idx)];
+                            while (cursor > 0) : (cursor -= 1) {
+                                _ = sys.Sys.write(1, "\x08 \x08", 3);
+                            }
+                            @memcpy(buf[0..prev.len], prev);
+                            cursor = prev.len;
+                            _ = sys.Sys.write(1, prev.ptr, prev.len);
+                        }
+                        esc_len = 0;
+                        continue;
+                    }
+                    // Arrow DOWN (history next)
+                    if (cur_esc[2] == 'B') {
+                        if (history.items.len > 0 and history_idx < @as(isize, @intCast(history.items.len)) - 1) {
+                            history_idx += 1;
+                            const next = history.items[@intCast(history_idx)];
+                            while (cursor > 0) : (cursor -= 1) {
+                                _ = sys.Sys.write(1, "\x08 \x08", 3);
+                            }
+                            @memcpy(buf[0..next.len], next);
+                            cursor = next.len;
+                            _ = sys.Sys.write(1, next.ptr, next.len);
+                        } else if (history_idx >= @as(isize, @intCast(history.items.len)) - 1) {
+                            history_idx = @intCast(history.items.len);
+                            while (cursor > 0) : (cursor -= 1) {
+                                _ = sys.Sys.write(1, "\x08 \x08", 3);
+                            }
+                        }
+                        esc_len = 0;
+                        continue;
+                    }
+                } else if (esc_len >= 6 or (esc_len >= 2 and esc_buf[1] != '[')) {
+                    for (cur_esc) |b| {
+                        if (cursor < buf.len - 1) {
+                            buf[cursor] = b;
+                            cursor += 1;
+                            _ = sys.Sys.write(1, &[_]u8{b}, 1);
+                        }
+                    }
+                    esc_len = 0;
+                    continue;
+                }
+                continue;
+            }
+
+            // 2. Return / Enter -> Submit prompt
+            if (!in_paste and (ch[0] == '\n' or ch[0] == '\r')) {
+                if (is_tty) _ = sys.Sys.write(1, "\r\n", 2);
+                break;
+            }
+
+            // 3. Backspace
+            if (!in_paste and (ch[0] == 127 or ch[0] == 8)) {
+                if (cursor > 0) {
+                    cursor -= 1;
+                    if (is_tty) _ = sys.Sys.write(1, "\x08 \x08", 3);
+                }
+                continue;
+            }
+
+            // 4. Ctrl+C
+            if (ch[0] == 3) {
+                if (is_tty) _ = sys.Sys.write(1, "^C\r\n", 4);
+                return "";
+            }
+
+            // 5. TAB -> Auto Complete Suggestions (/ commands & prompt box)
+            if (!in_paste and ch[0] == '\t') {
+                const cur_text = buf[0..cursor];
+                if (std.mem.startsWith(u8, cur_text, "/")) {
+                    var matches: [16][]const u8 = undefined;
+                    var match_count: usize = 0;
+                    for (AVAILABLE_COMMANDS) |item| {
+                        if (std.mem.startsWith(u8, item.cmd, cur_text)) {
+                            if (match_count < matches.len) {
+                                matches[match_count] = item.cmd;
+                                match_count += 1;
+                            }
+                        }
+                    }
+
+                    if (match_count == 1) {
+                        const completed = matches[0];
+                        if (is_tty) {
+                            while (cursor > 0) : (cursor -= 1) {
+                                _ = sys.Sys.write(1, "\x08 \x08", 3);
+                            }
+                        }
+                        @memcpy(buf[0..completed.len], completed);
+                        cursor = completed.len;
+                        buf[cursor] = ' ';
+                        cursor += 1;
+                        if (is_tty) _ = sys.Sys.write(1, buf[0..cursor].ptr, cursor);
+                    } else if (match_count > 1 and is_tty) {
+                        _ = sys.Sys.write(1, "\r\n\x1b[38;2;139;157;175m  Suggestions: \x1b[0m", 37);
+                        for (matches[0..match_count]) |m| {
+                            _ = sys.Sys.write(1, "\x1b[38;2;0;242;254m", 16);
+                            _ = sys.Sys.write(1, m.ptr, m.len);
+                            _ = sys.Sys.write(1, "\x1b[0m  ", 6);
+                        }
+                        _ = sys.Sys.write(1, "\r\n", 2);
+                        _ = sys.Sys.write(1, prompt_prefix.ptr, prompt_prefix.len);
+                        _ = sys.Sys.write(1, cur_text.ptr, cur_text.len);
+                    }
+                } else {
+                    var prompt_matches: [8][]const u8 = undefined;
+                    var p_count: usize = 0;
+                    for (COMMON_PROMPTS) |prompt| {
+                        if (std.mem.startsWith(u8, prompt, cur_text)) {
+                            if (p_count < prompt_matches.len) {
+                                prompt_matches[p_count] = prompt;
+                                p_count += 1;
+                            }
+                        }
+                    }
+
+                    if (p_count == 1) {
+                        const completed = prompt_matches[0];
+                        if (is_tty) {
+                            while (cursor > 0) : (cursor -= 1) {
+                                _ = sys.Sys.write(1, "\x08 \x08", 3);
+                            }
+                        }
+                        @memcpy(buf[0..completed.len], completed);
+                        cursor = completed.len;
+                        if (is_tty) _ = sys.Sys.write(1, buf[0..cursor].ptr, cursor);
+                    } else if (p_count > 1 and is_tty) {
+                        _ = sys.Sys.write(1, "\r\n\x1b[38;2;139;157;175m  Suggestions: \x1b[0m", 37);
+                        for (prompt_matches[0..p_count]) |m| {
+                            _ = sys.Sys.write(1, "\x1b[38;2;49;196;141m", 17);
+                            _ = sys.Sys.write(1, m.ptr, m.len);
+                            _ = sys.Sys.write(1, "\x1b[0m  ", 6);
+                        }
+                        _ = sys.Sys.write(1, "\r\n", 2);
+                        _ = sys.Sys.write(1, prompt_prefix.ptr, prompt_prefix.len);
+                        _ = sys.Sys.write(1, cur_text.ptr, cur_text.len);
+                    }
+                }
+                continue;
+            }
+
+            // Normal character echo and append
+            if (ch[0] == '\r') {
+                buf[cursor] = '\n';
+            } else {
+                buf[cursor] = ch[0];
+            }
+            cursor += 1;
+            if (is_tty) {
+                _ = sys.Sys.write(1, &ch, 1);
+            }
+        }
+        buf[cursor] = 0;
+
+        const raw_slice = buf[0..cursor];
         const trimmed = std.mem.trim(u8, raw_slice, " \t\r\n");
         if (trimmed.len > 0) {
             const dup = allocator.dupe(u8, trimmed) catch "";
@@ -93,8 +319,10 @@ pub const InteractiveTUI = struct {
             term_raw.c_cc[sys.VMIN] = 1;
             term_raw.c_cc[sys.VTIME] = 0;
             _ = sys.Sys.tcsetattr(0, sys.TCSANOW, &term_raw);
+            _ = sys.Sys.write(1, "\x1b[?1049h\x1b[?25l", 14);
         }
         defer if (has_tty) {
+            _ = sys.Sys.write(1, "\x1b[?25h\x1b[?1049l", 14);
             _ = sys.Sys.tcsetattr(0, sys.TCSANOW, &term_orig);
         };
 
@@ -180,7 +408,7 @@ pub const InteractiveTUI = struct {
 
         std.debug.print(
             \\
-            \\{s}╭─────────────────────────────────────────────────────────────────────────────╮{s}
+            \\\x1b[H\x1b[2J{s}╭─────────────────────────────────────────────────────────────────────────────╮{s}
             \\{s}│                    ⚡ ZIGAGENT SETTINGS & PREFERENCES                        │{s}
             \\{s}├─────────────────────────────────────────────────────────────────────────────┤{s}
             \\{s}│  Type number [1-8] and press ENTER to toggle • Press ENTER/q to return      │{s}

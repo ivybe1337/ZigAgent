@@ -25,6 +25,12 @@ pub const SkillManager = struct {
     }
 
     pub fn deinit(self: *SkillManager) void {
+        for (self.skills.items) |s| {
+            if (std.mem.startsWith(u8, s.path, "/")) {
+                self.allocator.free(s.name);
+                self.allocator.free(s.path);
+            }
+        }
         self.skills.deinit(self.allocator);
     }
 

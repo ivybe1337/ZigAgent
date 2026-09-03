@@ -21,6 +21,7 @@ pub const ThermodynamicMemory = struct {
         const home = sys.Sys.getenv("HOME") orelse ".";
         const home_len = std.mem.sliceTo(home, 0).len;
         const dir = std.fmt.allocPrint(allocator, "{s}/.ziggy/memory", .{home[0..home_len]}) catch ".";
+        defer if (!std.mem.eql(u8, dir, ".")) allocator.free(dir);
         _ = sys.makeDirAll(dir);
         const path = std.fmt.allocPrint(allocator, "{s}/thermodynamic_graph.json", .{dir}) catch "thermodynamic_graph.json";
 
