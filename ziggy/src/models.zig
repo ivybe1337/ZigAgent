@@ -230,12 +230,11 @@ pub const ModelBrowser = struct {
         }
 
         var term_raw = term_orig;
-        // Non-canonical only, KEEP ECHO to prevent macOS password manager trigger
-        term_raw.c_lflag &= ~@as(c_ulong, 0x00000002); // ~ICANON only
-        term_raw.c_cc[16] = 1; // VMIN = 1
-        term_raw.c_cc[17] = 0; // VTIME = 0
-        _ = sys.Sys.tcsetattr(0, 0, &term_raw);
-        defer _ = sys.Sys.tcsetattr(0, 0, &term_orig);
+        term_raw.c_lflag &= ~(sys.DARWIN_ICANON | sys.DARWIN_ECHO | sys.DARWIN_IEXTEN);
+        term_raw.c_cc[sys.VMIN] = 1;
+        term_raw.c_cc[sys.VTIME] = 0;
+        _ = sys.Sys.tcsetattr(0, sys.TCSANOW, &term_raw);
+        defer _ = sys.Sys.tcsetattr(0, sys.TCSANOW, &term_orig);
 
         const page_size: usize = 10;
         var view_offset: usize = 0;
@@ -257,6 +256,15 @@ pub const ModelBrowser = struct {
             // 'q', 'Q', or ESC alone
             if (r == 1 and (ch[0] == 'q' or ch[0] == 'Q' or ch[0] == 27)) {
                 break;
+            }
+
+            // Number key direct selection (1-9)
+            if (r == 1 and ch[0] >= '1' and ch[0] <= '9') {
+                const target_idx: usize = @intCast(ch[0] - '1');
+                if (target_idx < ALL_MODELS.len) {
+                    selected_idx = target_idx;
+                    continue;
+                }
             }
 
             // ENTER -> Choose Model!

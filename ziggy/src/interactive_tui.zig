@@ -83,41 +83,42 @@ pub const InteractiveTUI = struct {
         return out_buf[0..out_len];
     }
 
-    /// Robust, interactive Settings Menu without terminal termios locking
+    /// Robust, interactive Settings Menu with instant single-key toggles
     pub fn runInteractiveSettings(cfg_mgr: *config.ConfigManager) void {
+        var term_orig: sys.Termios = undefined;
+        const has_tty = (sys.Sys.tcgetattr(0, &term_orig) == 0);
+        if (has_tty) {
+            var term_raw = term_orig;
+            term_raw.c_lflag &= ~(sys.DARWIN_ICANON | sys.DARWIN_ECHO | sys.DARWIN_IEXTEN);
+            term_raw.c_cc[sys.VMIN] = 1;
+            term_raw.c_cc[sys.VTIME] = 0;
+            _ = sys.Sys.tcsetattr(0, sys.TCSANOW, &term_raw);
+        }
+        defer if (has_tty) {
+            _ = sys.Sys.tcsetattr(0, sys.TCSANOW, &term_orig);
+        };
+
         while (true) {
             renderSettingsScreen(cfg_mgr);
 
-            const prompt_str = "\x1b[38;2;60;80;110m│ \x1b[1;38;2;0;242;254mSelect Option [1-8] or [ENTER/q to exit]\x1b[0m ❯ ";
+            const prompt_str = "\x1b[38;2;60;80;110m│ \x1b[1;38;2;0;242;254mType [1-8] to toggle • [ENTER/q/ESC to return]\x1b[0m ❯ ";
             _ = sys.Sys.write(1, prompt_str, prompt_str.len);
 
-            var choice_buf: [64]u8 = undefined;
-            var choice_len: usize = 0;
-            while (choice_len < choice_buf.len - 1) {
-                var ch: [1]u8 = undefined;
-                const r = sys.Sys.read(0, &ch, 1);
-                if (r <= 0) break;
-                if (ch[0] == '\n' or ch[0] == '\r') break;
-                choice_buf[choice_len] = ch[0];
-                choice_len += 1;
-            }
-            choice_buf[choice_len] = 0;
+            var ch: [8]u8 = undefined;
+            const r = sys.Sys.read(0, @ptrCast(&ch), 8);
+            if (r <= 0) break;
 
-            const input = std.mem.trim(u8, choice_buf[0..choice_len], " \t\r\n");
-            if (input.len == 0 or std.mem.eql(u8, input, "q") or std.mem.eql(u8, input, "Q") or std.mem.eql(u8, input, "exit")) {
+            if (ch[0] == 'q' or ch[0] == 'Q' or ch[0] == '\n' or ch[0] == '\r' or ch[0] == 27) {
                 break;
             }
 
-            if (input.len == 1) {
-                const opt = input[0];
-                if (opt >= '1' and opt <= '8') {
-                    const idx: usize = @intCast(opt - '1');
-                    toggleSetting(cfg_mgr, idx);
-                }
+            if (ch[0] >= '1' and ch[0] <= '8') {
+                const idx: usize = @intCast(ch[0] - '1');
+                toggleSetting(cfg_mgr, idx);
             }
         }
 
-        std.debug.print("\n{s}✔ Configuration saved to {s}{s}\n\n", .{ tui.TUI.C_AQUA, cfg_mgr.config_path[0..cfg_mgr.config_path_len], tui.TUI.C_RESET });
+        std.debug.print("\n\x1b[2J\x1b[H{s}✔ Configuration saved to {s}{s}\n\n", .{ tui.TUI.C_AQUA, cfg_mgr.config_path[0..cfg_mgr.config_path_len], tui.TUI.C_RESET });
     }
 
     fn toggleSetting(cfg: *config.ConfigManager, idx: usize) void {

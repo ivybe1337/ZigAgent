@@ -47,6 +47,14 @@ pub const Termios = extern struct {
     c_ospeed: c_ulong,
 };
 
+pub const DARWIN_ICANON: c_ulong = 0x00000100;
+pub const DARWIN_ECHO: c_ulong = 0x00000008;
+pub const DARWIN_ISIG: c_ulong = 0x00000080;
+pub const DARWIN_IEXTEN: c_ulong = 0x00000400;
+pub const VMIN: usize = 16;
+pub const VTIME: usize = 17;
+pub const TCSANOW: c_int = 0;
+
 pub const Sys = struct {
     pub extern fn open(path: [*:0]const u8, flags: c_int, ...) c_int;
     pub extern fn close(fd: c_int) c_int;
