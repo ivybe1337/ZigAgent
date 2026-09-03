@@ -17,13 +17,6 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
-    const install_public = b.addInstallDirectory(.{
-        .source_dir = b.path("public"),
-        .install_dir = .prefix,
-        .install_subdir = "public",
-    });
-    b.getInstallStep().dependOn(&install_public.step);
-
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cmd.addArgs(args);

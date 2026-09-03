@@ -170,16 +170,16 @@ pub const Repl = struct {
         const m = self.getContextMetrics();
 
         const ctx_color = if (m.fill_pct < 50.0)
-            "\x1b[38;2;49;196;141m" // green
+            "\x1b[38;2;16;185;129m" // emerald
         else if (m.fill_pct < 80.0)
-            "\x1b[38;2;255;184;108m" // amber
+            "\x1b[38;2;245;158;11m" // amber
         else
-            "\x1b[38;2;255;107;107m"; // red
+            "\x1b[38;2;244;63;94m"; // coral
 
         const max_k = m.max_tokens / 1000;
 
         std.debug.print(
-            "\n\x1b[38;2;100;116;139m╭──\x1b[0m \x1b[1;38;2;241;245;249m{s}\x1b[0m \x1b[38;2;100;116;139m│\x1b[0m \x1b[38;2;148;163;184m{s}\x1b[0m \x1b[38;2;100;116;139m│\x1b[0m {s}{d}/{d}k tok ({d:.1}%)\x1b[0m",
+            "\n\x1b[38;2;51;65;85m╭──\x1b[0m \x1b[38;2;0;242;254m⚡\x1b[0m \x1b[1;38;2;241;245;249m{s}\x1b[0m \x1b[38;2;51;65;85m│\x1b[0m \x1b[38;2;148;163;184m{s}\x1b[0m \x1b[38;2;51;65;85m│\x1b[0m {s}{d}/{d}k tok ({d:.1}%)\x1b[0m",
             .{
                 self.getActiveModel(),
                 self.cfg_mgr.config.thinking_effort.asString(),
@@ -191,9 +191,55 @@ pub const Repl = struct {
         );
 
         if (m.session_tokens > 0) {
-            std.debug.print(" \x1b[38;2;100;116;139m│\x1b[0m \x1b[38;2;148;163;184mSession: {d} tok\x1b[0m", .{m.session_tokens});
+            std.debug.print(" \x1b[38;2;51;65;85m│\x1b[0m \x1b[38;2;100;116;139mSession: {d} tok\x1b[0m", .{m.session_tokens});
         }
-        std.debug.print(" \x1b[38;2;100;116;139m───────────────────────────────────────────────\x1b[0m\n", .{});
+        std.debug.print(" \x1b[38;2;51;65;85m───────────────────────────────────────────────\x1b[0m\n", .{});
+    }
+
+    pub fn runStudioTui(self: *Repl) void {
+        var t = tui.TUI{};
+        t.enterRawMode();
+        defer t.exitRawMode();
+
+        while (true) {
+            const m = self.getContextMetrics();
+            t.renderStudioDashboard(
+                self.getActiveModel(),
+                self.vault.config.provider.asString(),
+                m.current_tokens,
+                m.max_tokens,
+                m.fill_pct,
+                &self.engine,
+            );
+
+            var ch: [8]u8 = undefined;
+            const r = sys.Sys.read(0, @ptrCast(&ch), 8);
+            if (r <= 0) break;
+
+            if (ch[0] == 'q' or ch[0] == 'Q' or ch[0] == 27) {
+                break;
+            } else if (ch[0] == 'm' or ch[0] == 'M') {
+                t.exitRawMode();
+                _ = self.handleSlashCommand("/model");
+                t.enterRawMode();
+            } else if (ch[0] == 'k' or ch[0] == 'K') {
+                t.exitRawMode();
+                _ = self.handleSlashCommand("/keys");
+                t.enterRawMode();
+            } else if (ch[0] == 's' or ch[0] == 'S') {
+                t.exitRawMode();
+                interactive_tui.InteractiveTUI.runInteractiveSettings(&self.cfg_mgr);
+                t.enterRawMode();
+            } else if (ch[0] == 'd' or ch[0] == 'D') {
+                t.exitRawMode();
+                _ = self.handleSlashCommand("/doctor");
+                std.debug.print("\nPress any key to return to Studio TUI...\n", .{});
+                _ = sys.Sys.read(0, @ptrCast(&ch), 1);
+                t.enterRawMode();
+            } else if (ch[0] == '\n' or ch[0] == '\r') {
+                break; // return to prompt
+            }
+        }
     }
 
     pub fn run(self: *Repl) !void {
@@ -241,25 +287,22 @@ pub const Repl = struct {
 
     fn printWelcome(self: *Repl) void {
         std.debug.print(
-            \\
-            \\{s}{s}  ⚡ ZIGAGENT CLI v0.1.0{s} {s}[Autonomous Action Engine]{s}
-            \\{s}  Active Provider: {s}{s}{s} │ Model: {s}{s}{s}
-            \\{s}  Agent ID: {s}{s}{s} │ Project: {s}{s}{s}
-            \\{s}  Type {s}/{s} for autocomplete, {s}!{s} for shell commands, or enter a directive.
-            \\{s}─────────────────────────────────────────────────────────────────────────────{s}
-            \\
-        , .{
-            tui.TUI.C_AQUA, tui.TUI.C_BOLD, tui.TUI.C_RESET,
-            tui.TUI.C_DIM, tui.TUI.C_RESET,
-            tui.TUI.C_MUTED, tui.TUI.C_CYAN, self.vault.config.provider.asString(), tui.TUI.C_RESET,
-            tui.TUI.C_ORANGE, self.getActiveModel(), tui.TUI.C_RESET,
-            tui.TUI.C_MUTED, tui.TUI.C_WHITE, std.mem.sliceTo(&self.context_ledger.current_agent_id, 0), tui.TUI.C_RESET,
-            tui.TUI.C_WHITE, std.mem.sliceTo(&self.context_ledger.current_project_id, 0), tui.TUI.C_RESET,
-            tui.TUI.C_MUTED, tui.TUI.C_AQUA, tui.TUI.C_MUTED, tui.TUI.C_ORANGE, tui.TUI.C_MUTED,
-            tui.TUI.C_BORDER, tui.TUI.C_RESET,
-        });
+            "\n" ++
+            "\x1b[38;2;51;65;85m╭─────────────────────────────────────────────────────────────────────────────╮\x1b[0m\n" ++
+            "\x1b[38;2;51;65;85m│\x1b[0m  \x1b[1;38;2;0;242;254m⚡ ZIGAGENT STUDIO // AUTONOMOUS ACTION ENGINE\x1b[0m \x1b[38;2;100;116;139mv0.1.0 (Native Zig)\x1b[0m            \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+            "\x1b[38;2;51;65;85m├─────────────────────────────────────────────────────────────────────────────┤\x1b[0m\n" ++
+            "\x1b[38;2;51;65;85m│\x1b[0m  • \x1b[38;2;100;116;139mActive Model:\x1b[0m  \x1b[1;38;2;0;242;254m{s:<48}\x1b[0m \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+            "\x1b[38;2;51;65;85m│\x1b[0m  • \x1b[38;2;100;116;139mAI Provider:\x1b[0m   \x1b[1;38;2;56;189;248m{s:<16}\x1b[0m \x1b[38;2;100;116;139mAgent ID:\x1b[0m \x1b[38;2;241;245;249m{s:<18}\x1b[0m \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+            "\x1b[38;2;51;65;85m│\x1b[0m  • \x1b[38;2;100;116;139mDirectives:\x1b[0m    Type \x1b[1;38;2;0;242;254m/\x1b[0m for commands, \x1b[1;38;2;255;184;108m!\x1b[0m for shell, or ask any task.       \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+            "\x1b[38;2;51;65;85m╰─────────────────────────────────────────────────────────────────────────────╯\x1b[0m\n",
+            .{
+                self.getActiveModel(),
+                self.vault.config.provider.asString(),
+                std.mem.sliceTo(&self.context_ledger.current_agent_id, 0),
+            },
+        );
 
-        std.debug.print("  {s}💡 Tip: {s}{s}\n\n", .{ tui.TUI.C_MUTED, tips.getNextTip(), tui.TUI.C_RESET });
+        std.debug.print("  \x1b[38;2;100;116;139m💡 Studio Tip: {s}\x1b[0m\n\n", .{tips.getNextTip()});
 
         // Check if waking up from a hot-restart recompile
         if (sys.readEntireFile(self.allocator, ".ziggy/rehydration.json", 1024)) |rehyd_json| {
@@ -465,76 +508,37 @@ pub const Repl = struct {
             return true;
         }
 
-        if (std.mem.eql(u8, cmd, "/commands") or std.mem.eql(u8, cmd, "/help") or std.mem.eql(u8, cmd, "/terminal")) {
+        if (std.mem.eql(u8, cmd, "/commands") or std.mem.eql(u8, cmd, "/help") or std.mem.eql(u8, cmd, "/?")) {
             std.debug.print(
-                "\n{s}=== ZIGAGENT COMMANDS & CAPABILITY REGISTRY ==={s}\n\n" ++
-                "  {s}⚙️  CONFIGURATION & PREFERENCES:{s}\n" ++
-                "    \x1b[38;2;255;107;53m/settings\x1b[0m                 Interactive settings & preferences panel\n" ++
-                "    \x1b[38;2;255;107;53m/unbounded\x1b[0m                Toggle unbounded infinite autonomy mode\n" ++
-                "    \x1b[38;2;255;107;53m/remote [port]\x1b[0m            Launch Manus-style cloud desktop gateway\n" ++
-                "    \x1b[38;2;255;107;53m/compact [focus]\x1b[0m          Targeted context compaction\n" ++
-                "    \x1b[38;2;255;107;53m/models\x1b[0m                   Preview available frontier & stealth models\n" ++
-                "    \x1b[38;2;255;107;53m/model <id>\x1b[0m               Activate specific model\n\n" ++
-                "  {s}🧬 SELF-IMPROVEMENT & DELIBERATION:{s}\n" ++
-                "    \x1b[38;2;255;107;53m/evolve\x1b[0m                   Autonomous codebase self-analysis & optimization\n" ++
-                "    \x1b[38;2;255;107;53m/deliberate <goal>\x1b[0m        4-pass recursive metacognition (Think -> Rethink -> Refine)\n\n" ++
-                "  {s}💬 MESSAGING & OMNICHANNEL BRIDGES:{s}\n" ++
-                "    \x1b[38;2;255;107;53m/bridges\x1b[0m                  List iMessage, Telegram, WhatsApp, RCS bridges\n" ++
-                "    \x1b[38;2;255;107;53m/msg <plat> <to> <txt>\x1b[0m    Send outbound message via bridge\n\n" ++
-                "  {s}🔌 PLUGINS, SKILLS & MCP PROTOCOL:{s}\n" ++
-                "    \x1b[38;2;255;107;53m/mcp\x1b[0m                      Model Context Protocol servers & tools\n" ++
-                "    \x1b[38;2;255;107;53m/skills\x1b[0m                   Specialized playbooks & domain skills\n" ++
-                "    \x1b[38;2;255;107;53m/skill <name>\x1b[0m             Activate a specific domain skill\n" ++
-                "    \x1b[38;2;255;107;53m/plugins\x1b[0m                  Manage dynamic plugins & extensions\n\n",
-                .{
-                    tui.TUI.C_CYAN, tui.TUI.C_RESET,
-                    tui.TUI.C_AQUA, tui.TUI.C_RESET,
-                    tui.TUI.C_AQUA, tui.TUI.C_RESET,
-                    tui.TUI.C_AQUA, tui.TUI.C_RESET,
-                    tui.TUI.C_AQUA, tui.TUI.C_RESET,
-                },
-            );
-
-            std.debug.print(
-                "  {s}🌐 OMNILATTICE & CONTINUITY:{s}\n" ++
-                "    \x1b[38;2;255;107;53m/omni\x1b[0m                     OmniLattice node status & bootstrap\n" ++
-                "    \x1b[38;2;255;107;53m/omni sync\x1b[0m                Synchronize Merkle DAG with OmniLattice Forest\n" ++
-                "    \x1b[38;2;255;107;53m/omni search <q>\x1b[0m          Semantic search across global memory\n" ++
-                "    \x1b[38;2;255;107;53m/ledger\x1b[0m                   Cross-agent session continuity stream\n" ++
-                "    \x1b[38;2;255;107;53m/inbox\x1b[0m                    Check inter-agent peer messages\n\n" ++
-                "  {s}🧠 COGNITIVE & REASONING SUITE:{s}\n" ++
-                "    \x1b[38;2;255;107;53m/speculate <idea>\x1b[0m      Speculative multi-branch candidate evaluation\n" ++
-                "    \x1b[38;2;255;107;53m/provenance\x1b[0m             Causal DAG execution trace graph\n" ++
-                "    \x1b[38;2;255;107;53m/council\x1b[0m                3-perspective cross-lens consensus review\n" ++
-                "    \x1b[38;2;255;107;53m/ast\x1b[0m                    Balanced delimiter AST synthesis guard\n" ++
-                "    \x1b[38;2;255;107;53m/invariants\x1b[0m             Formal mathematical invariant gates\n\n",
-                .{
-                    tui.TUI.C_AQUA, tui.TUI.C_RESET,
-                    tui.TUI.C_AQUA, tui.TUI.C_RESET,
-                },
-            );
-
-            std.debug.print(
-                "  {s}💾 STATE & TIME MACHINE:{s}\n" ++
-                "    \x1b[38;2;255;107;53m/snapshot\x1b[0m               Create point-in-time state checkpoint\n" ++
-                "    \x1b[38;2;255;107;53m/timeline\x1b[0m               List historical recovery rollback snapshots\n" ++
-                "    \x1b[38;2;255;107;53m/merkle\x1b[0m                 Display SHA-256 Merkle root hash\n\n" ++
-                "  {s}💻 DIRECT TERMINAL / SHELL EXECUTION (!):{s}\n" ++
-                "    \x1b[38;2;83;182;255m!<command>\x1b[0m                Run any shell command directly (e.g. !ls -la, !git status, !grep, !zig build)\n\n" ++
-                "  {s}🩺 SYSTEM & TOOLS:{s}\n" ++
-                "    \x1b[38;2;255;107;53m/doctor\x1b[0m                 Audit toolchains (Zig, Git, cURL, Bun, Python3, Rust, Clang)\n" ++
-                "    \x1b[38;2;255;107;53m/keys\x1b[0m                   View AI provider authentication vault\n" ++
-                "    \x1b[38;2;255;107;53m/key <prov> <key>\x1b[0m       Set API key for provider (e.g. /key openrouter sk-or-...)\n" ++
-                "    \x1b[38;2;255;107;53m/provider <name>\x1b[0m        Switch active AI provider (e.g. /provider openrouter)\n" ++
-                "    \x1b[38;2;255;107;53m/reset\x1b[0m                  Clear conversation history & start fresh dialogue\n" ++
-                "    \x1b[38;2;255;107;53m/clear\x1b[0m                  Clear screen\n" ++
-                "    \x1b[38;2;255;107;53m/exit\x1b[0m                   Exit ZigAgent\n" ++
-                "─────────────────────────────────────────────────────────────────────────────\n",
-                .{
-                    tui.TUI.C_AQUA, tui.TUI.C_RESET,
-                    tui.TUI.C_AQUA, tui.TUI.C_RESET,
-                    tui.TUI.C_AQUA, tui.TUI.C_RESET,
-                },
+                "\n" ++
+                "\x1b[38;2;51;65;85m╭─────────────────────────────────────────────────────────────────────────────╮\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m  \x1b[1;38;2;0;242;254m⚡ ZIGAGENT STUDIO // COMMAND & DIRECTIVE REFERENCE\x1b[0m                         \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m├─────────────────────────────────────────────────────────────────────────────┤\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m  \x1b[1;38;2;241;245;249mCORE DIRECTIVES:\x1b[0m                                                           \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;0;242;254m/model [name]\x1b[0m            Switch active model or open visual picker       \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;0;242;254m/keys [prov] [key]\x1b[0m       View auth vault or set key / provider           \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;0;242;254m/settings\x1b[0m                Interactive cockpit (autonomy, sandbox, context)\x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;0;242;254m/tui\x1b[0m                     Full-screen Studio Terminal GUI Dashboard       \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;0;242;254m/reset\x1b[0m                   Clear conversation history & start fresh session\x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m                                                                             \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m  \x1b[1;38;2;241;245;249mAUTONOMOUS ACTION SUITE:\x1b[0m                                                 \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;56;189;248m/skills [name]\x1b[0m           Inspect or activate specialized domain playbooks\x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;56;189;248m/mcp [server]\x1b[0m            Model Context Protocol servers & registered tool\x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;56;189;248m/tools\x1b[0m                   Inspect registered native autonomous tools      \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;56;189;248m/vision\x1b[0m                  Spatial screen perception & computer-use        \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;56;189;248m/swarm [task]\x1b[0m            Launch 4-agent parallel consensus crew          \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;56;189;248m/snapshot [save|rollback]\x1b[0mTime Machine state checkpoint & rollback         \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m                                                                             \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m  \x1b[1;38;2;241;245;249mTERMINAL & SYSTEM:\x1b[0m                                                          \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;255;184;108m!<command>\x1b[0m               Instant subshell execution (e.g. !git status)   \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;255;184;108m/doctor\x1b[0m                  Deep audit of system toolchains & invariants    \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;255;107;107m/clear\x1b[0m                   Clear terminal screen                           \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m    \x1b[1;38;2;255;107;107m/exit\x1b[0m                    Cleanly exit ZigAgent CLI                       \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m                                                                             \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m  \x1b[38;2;100;116;139m* AUTOMATED IN ENGINE: 4-Pass Metacognition, AST delimiter guards,       \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m│\x1b[0m  \x1b[38;2;100;116;139m  Merkle Forest proofs, thermodynamic cooling, & context compaction.    \x1b[38;2;51;65;85m│\x1b[0m\n" ++
+                "\x1b[38;2;51;65;85m╰─────────────────────────────────────────────────────────────────────────────╯\x1b[0m\n",
+                .{},
             );
             return true;
         }
@@ -730,6 +734,11 @@ pub const Repl = struct {
             return true;
         }
 
+        if (std.mem.eql(u8, cmd, "/tui") or std.mem.eql(u8, cmd, "/gui") or std.mem.eql(u8, cmd, "/dashboard")) {
+            self.runStudioTui();
+            return true;
+        }
+
         if (std.mem.eql(u8, cmd, "/models") or (std.mem.eql(u8, cmd, "/model") and arg1 == null)) {
             if (models.ModelBrowser.runInteractivePicker(self.allocator, self.getActiveModel())) |new_m| {
                 self.setActiveModel(new_m);
@@ -743,6 +752,27 @@ pub const Repl = struct {
         }
 
         if (std.mem.eql(u8, cmd, "/keys")) {
+            if (arg1 != null and arg2 != null) {
+                if (std.mem.eql(u8, arg1.?, "provider")) {
+                    if (auth.ProviderType.parse(arg2.?)) |p| {
+                        self.vault.config.provider = p;
+                        self.vault.saveToVault();
+                        std.debug.print("{s}✔ Active provider switched to: {s}{s}\n", .{ tui.TUI.C_AQUA, p.asString(), tui.TUI.C_RESET });
+                    } else {
+                        std.debug.print("{s}Unknown provider: {s}{s}\n", .{ tui.TUI.C_ORANGE, arg2.?, tui.TUI.C_RESET });
+                    }
+                    return true;
+                }
+                if (auth.ProviderType.parse(arg1.?)) |p| {
+                    self.vault.setKey(p, arg2.?);
+                    self.vault.saveToVault();
+                    std.debug.print("{s}✔ {s} key saved to auth vault.{s}\n", .{ tui.TUI.C_AQUA, p.asString(), tui.TUI.C_RESET });
+                } else {
+                    std.debug.print("{s}Unknown provider: {s}. Valid options: openrouter, groq, anthropic, openai, gemini, huggingface{s}\n", .{ tui.TUI.C_ORANGE, arg1.?, tui.TUI.C_RESET });
+                }
+                return true;
+            }
+
             std.debug.print("\n{s}=== AI PROVIDER AUTH VAULT ==={s}\n", .{ tui.TUI.C_CYAN, tui.TUI.C_RESET });
             const providers = [_]auth.ProviderType{
                 .groq, .openrouter, .anthropic, .openai, .gemini, .huggingface,
@@ -766,7 +796,7 @@ pub const Repl = struct {
                     masked,
                 });
             }
-            std.debug.print("\n{s}Tip: Use /key <provider> <api_key> to set a key, or /provider <name> to switch provider.{s}\n", .{ tui.TUI.C_MUTED, tui.TUI.C_RESET });
+            std.debug.print("\n{s}Tip: Use /keys <provider> <api_key> to set a key, or /keys provider <name> to switch provider.{s}\n", .{ tui.TUI.C_MUTED, tui.TUI.C_RESET });
             return true;
         }
 

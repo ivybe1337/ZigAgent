@@ -47,6 +47,15 @@ pub const Termios = extern struct {
     c_ospeed: c_ulong,
 };
 
+pub const Winsize = extern struct {
+    ws_row: u16,
+    ws_col: u16,
+    ws_xpixel: u16,
+    ws_ypixel: u16,
+};
+
+pub const TIOCGWINSZ: c_ulong = 0x40087468;
+
 pub const DARWIN_ICANON: c_ulong = 0x00000100;
 pub const DARWIN_ECHO: c_ulong = 0x00000008;
 pub const DARWIN_ISIG: c_ulong = 0x00000080;
@@ -66,6 +75,7 @@ pub const Sys = struct {
     pub extern fn nanosleep(req: *const Timespec, rem: ?*Timespec) c_int;
     pub extern fn tcgetattr(fd: c_int, termios_p: *Termios) c_int;
     pub extern fn tcsetattr(fd: c_int, optional_actions: c_int, termios_p: *const Termios) c_int;
+    pub extern fn ioctl(fd: c_int, request: c_ulong, ...) c_int;
     pub extern fn isatty(fd: c_int) c_int;
     pub extern fn system(command: [*:0]const u8) c_int;
     pub extern fn popen(command: [*:0]const u8, mode: [*:0]const u8) ?*anyopaque;
@@ -74,6 +84,14 @@ pub const Sys = struct {
     pub extern fn clock_gettime(clk_id: c_int, tp: *Timespec) c_int;
     pub extern fn getenv(name: [*:0]const u8) ?[*:0]const u8;
 };
+
+pub fn getTerminalSize() Winsize {
+    var ws = Winsize{ .ws_row = 24, .ws_col = 80, .ws_xpixel = 0, .ws_ypixel = 0 };
+    _ = Sys.ioctl(1, TIOCGWINSZ, &ws);
+    if (ws.ws_col < 40) ws.ws_col = 80;
+    if (ws.ws_row < 10) ws.ws_row = 24;
+    return ws;
+}
 
 pub fn currentTimestamp() i64 {
     var ts: Timespec = undefined;
